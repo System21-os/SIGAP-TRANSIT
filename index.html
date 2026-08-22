@@ -1055,20 +1055,6 @@
                 <div id="scan-status" class="scan-status">
                     <i class="ph ph-target"></i> <span>Arahkan barcode ke dalam bingkai&hellip;</span>
                 </div>
-                <div>
-                    <label class="lbl">Scanner Alat / Ketik Kode Manual</label>
-                    <div style="display:flex; gap:8px;">
-                        <input type="text" id="scan-manual" class="inp" autocomplete="off" autocorrect="off" spellcheck="false"
-                            placeholder="Tembak barcode atau ketik kode, lalu Enter"
-                            onkeydown="if(event.key==='Enter'){event.preventDefault();submitManualScan();}">
-                        <button type="button" class="btn-primary" style="padding:10px 16px;" onclick="submitManualScan()" title="Cari kode">
-                            <i class="ph ph-magnifying-glass" style="font-size:1.1rem;"></i>
-                        </button>
-                    </div>
-                    <p class="scan-hint">
-                        Scanner USB / Bluetooth (barcode gun) langsung bekerja &mdash; cukup ditembakkan selagi jendela ini terbuka.
-                    </p>
-                </div>
             </div>
 
             <div style="padding:12px 16px; border-top:1px solid var(--border); background:var(--surface2); display:flex; align-items:center; justify-content:space-between; gap:10px;">
@@ -1082,7 +1068,7 @@
         // ===================== KONFIGURASI API (UNTUK GITHUB PAGES) =====================
         // Jika dihosting di GitHub Pages, isi URL Web App Apps Script Anda di bawah ini.
         // Jika dijalankan langsung di Google Apps Script (HTML Service), biarkan apa adanya.
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec"; // Contoh: ""
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec"; // Contoh: "https://script.google.com/macros/s/AKfycbx.../exec"
 
         // ===================== GLOBAL STATE =====================
         let masterItems      = [];
@@ -1213,7 +1199,10 @@
                 finish(false);
                 if (key && _isStale(key, token)) { settle(false); return; }
                 if (key) REQ[key] = 'error';
-                const errMsg = (err && (err.message || err.toString())) || 'Koneksi server gagal.';
+                let errMsg = (err && (err.message || err.toString())) || 'Koneksi server gagal.';
+                if (errMsg.indexOf('Failed to fetch') > -1 || errMsg.indexOf('NetworkError') > -1) {
+                    errMsg = 'Failed to fetch (Akses Ditolak Google). Pastikan saat Deploy Apps Script opsi "Who has access / Siapa yang memiliki akses" disetel ke "Anyone / Siapa saja" dan gunakan URL "/exec" Versi Baru.';
+                }
                 try {
                     if (opt.onError) opt.onError(errMsg);
                     else if (opt.alertOnError) showAlert('Error', errMsg, 'error');
@@ -3284,14 +3273,6 @@
             setScanStatus('scanning');
             setScanCamMessage('');
             document.getElementById('scan-modal').classList.add('show');
-
-            const manual = document.getElementById('scan-manual');
-            if (manual) {
-                manual.value = '';
-                // Scanner alat (HID) mengetik ke kolom ini, jadi harus selalu fokus.
-                setTimeout(() => { try { manual.focus(); } catch (e) {} }, 120);
-            }
-
             startCameraScan();
         }
 
@@ -3301,35 +3282,24 @@
             if (m) m.classList.remove('show');
         }
 
-        function submitManualScan() {
-            const el = document.getElementById('scan-manual');
-            if (!el) return;
-            const val = el.value.trim();
-            el.value = '';
-            if (val) handleScannedCode(val, false);
-            try { el.focus(); } catch (e) {}
-        }
-
         // ---------------- Kamera ----------------
 
         function cameraErrorText(err) {
             const name = (err && err.name) ? err.name : '';
             if (name === 'NotAllowedError' || name === 'SecurityError') {
                 return '<i class="ph ph-lock-key"></i><div><b>Akses kamera ditolak.</b><br>' +
-                       'Izinkan kamera pada browser, lalu buka ulang jendela ini. ' +
-                       'Bila aplikasi ditampilkan di dalam frame (embed), buka lewat URL web app langsung.<br>' +
-                       'Scanner alat &amp; input manual di bawah tetap bisa dipakai.</div>';
+                       'Izinkan akses kamera pada browser Anda, lalu buka ulang scanner.</div>';
             }
             if (name === 'NotFoundError' || name === 'OverconstrainedError') {
                 return '<i class="ph ph-camera-slash"></i><div><b>Kamera tidak ditemukan.</b><br>' +
-                       'Gunakan scanner alat atau ketik kode di bawah.</div>';
+                       'Pastikan perangkat memiliki kamera yang terhubung.</div>';
             }
             if (name === 'NotReadableError') {
                 return '<i class="ph ph-camera-slash"></i><div><b>Kamera sedang dipakai aplikasi lain.</b><br>' +
                        'Tutup aplikasi tersebut lalu coba lagi.</div>';
             }
             return '<i class="ph ph-camera-slash"></i><div><b>Kamera tidak dapat dibuka.</b><br>' +
-                   'Gunakan scanner alat atau ketik kode di bawah.</div>';
+                   'Periksa izin kamera pada browser.</div>';
         }
 
         async function startCameraScan(deviceId) {
