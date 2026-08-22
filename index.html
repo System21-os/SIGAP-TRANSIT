@@ -13,48 +13,6 @@
     <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
-  <script>
-  // 1. MASUKKAN URL WEB APP BAPAK DI SINI
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec";
-
-  // 2. FUNGSI PROXY: Mengubah otomatis google.script.run menjadi fetch()
-  window.google = {
-    script: {
-      get run() {
-        let successCb = null;
-        let failureCb = null;
-
-        return new Proxy({}, {
-          get: function(target, prop) {
-            // Tangkap handler sukses
-            if (prop === 'withSuccessHandler') {
-              return function(cb) { successCb = cb; return this; };
-            }
-            // Tangkap handler error
-            if (prop === 'withFailureHandler') {
-              return function(cb) { failureCb = cb; return this; };
-            }
-            // Kirim request ke backend Code.gs
-            return function(payload) {
-              fetch(GAS_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Wajib text/plain untuk bypass CORS Apps Script
-                body: JSON.stringify({ action: prop, data: payload || {} })
-              })
-              .then(res => res.json())
-              .then(data => {
-                if (successCb) successCb(data);
-              })
-              .catch(err => {
-                if (failureCb) failureCb(err);
-              });
-            };
-          }
-        });
-      }
-    }
-  };
-</script>
 
     <style>
         :root {
@@ -1121,6 +1079,11 @@
     </div>
 
     <script>
+        // ===================== KONFIGURASI API (UNTUK GITHUB PAGES) =====================
+        // Jika dihosting di GitHub Pages, isi URL Web App Apps Script Anda di bawah ini.
+        // Jika dijalankan langsung di Google Apps Script (HTML Service), biarkan apa adanya.
+        const GAS_API_URL = "PASTE_URL_WEB_APP_DISINI"; // Contoh: "https://script.google.com/macros/s/AKfycbx.../exec"
+
         // ===================== GLOBAL STATE =====================
         let masterItems      = [];
         let tomSelectInstance = null;
@@ -1230,34 +1193,66 @@
 
             const settle = (ok) => { if (opt.onSettled) { try { opt.onSettled(ok); } catch (e) { console.error(e); } } };
 
-            const runner = google.script.run
-                .withSuccessHandler(res => {
-                    const ok = !!(res && res.success);
-                    finish(ok);
-                    if (key && _isStale(key, token)) { settle(ok); return; }   // respons usang -> abaikan hasilnya
-                    if (key) REQ[key] = ok ? 'ready' : 'error';
-                    try {
-                        if (ok) { if (opt.onSuccess) opt.onSuccess(res); }
-                        else {
-                            const msg = (res && res.message) || 'Terjadi kesalahan pada server.';
-                            if (opt.onError) opt.onError(msg);
-                            else if (opt.alertOnError) showAlert('Gagal', msg, 'error');
-                        }
-                    } catch (e) { console.error(e); }
-                    settle(ok);
-                })
-                .withFailureHandler(() => {
-                    finish(false);
-                    if (key && _isStale(key, token)) { settle(false); return; }
-                    if (key) REQ[key] = 'error';
-                    try {
-                        if (opt.onError) opt.onError('Koneksi server gagal.');
-                        else if (opt.alertOnError) showAlert('Error', 'Koneksi Server Gagal', 'error');
-                    } catch (e) { console.error(e); }
-                    settle(false);
-                });
+            const handleSuccess = (res) => {
+                const ok = !!(res && res.success);
+                finish(ok);
+                if (key && _isStale(key, token)) { settle(ok); return; }   // respons usang -> abaikan hasilnya
+                if (key) REQ[key] = ok ? 'ready' : 'error';
+                try {
+                    if (ok) { if (opt.onSuccess) opt.onSuccess(res); }
+                    else {
+                        const msg = (res && res.message) || 'Terjadi kesalahan pada server.';
+                        if (opt.onError) opt.onError(msg);
+                        else if (opt.alertOnError) showAlert('Gagal', msg, 'error');
+                    }
+                } catch (e) { console.error(e); }
+                settle(ok);
+            };
 
-            runner[opt.fn].apply(runner, opt.args || []);
+            const handleFailure = (err) => {
+                finish(false);
+                if (key && _isStale(key, token)) { settle(false); return; }
+                if (key) REQ[key] = 'error';
+                const errMsg = (err && (err.message || err.toString())) || 'Koneksi server gagal.';
+                try {
+                    if (opt.onError) opt.onError(errMsg);
+                    else if (opt.alertOnError) showAlert('Error', errMsg, 'error');
+                } catch (e) { console.error(e); }
+                settle(false);
+            };
+
+            // MODE 1: Berjalan langsung di Google Apps Script (HTML Service)
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                const runner = google.script.run
+                    .withSuccessHandler(handleSuccess)
+                    .withFailureHandler(handleFailure);
+                runner[opt.fn].apply(runner, opt.args || []);
+                return true;
+            }
+
+            // MODE 2: Berjalan di GitHub Pages / Hosting Eksternal (via Fetch API)
+            if (!GAS_API_URL || GAS_API_URL.indexOf("PASTE_URL_WEB_APP") > -1) {
+                handleFailure(new Error("URL API belum disetel! Harap isi variabel GAS_API_URL di Index.html dengan URL Web App Apps Script Anda."));
+                return false;
+            }
+
+            // Kirim POST dengan header text/plain agar browser TIDAK mengirim preflight OPTIONS (CORS Bypass)
+            fetch(GAS_API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "text/plain;charset=utf-8" },
+                body: JSON.stringify({
+                    action: opt.fn,
+                    args: opt.args || []
+                }),
+                redirect: "follow"
+            })
+            .then(res => {
+                if (!res.ok) throw new Error("HTTP " + res.status + ": " + res.statusText);
+                return res.json();
+            })
+            .then(data => handleSuccess(data))
+            .catch(err => handleFailure(err));
+
             return true;
         }
 
