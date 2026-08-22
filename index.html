@@ -1,0 +1,3560 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trans Cafe Gading · Inventory</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <script>
+  // 1. MASUKKAN URL WEB APP BAPAK DI SINI
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec";
+
+  // 2. FUNGSI PROXY: Mengubah otomatis google.script.run menjadi fetch()
+  window.google = {
+    script: {
+      get run() {
+        let successCb = null;
+        let failureCb = null;
+
+        return new Proxy({}, {
+          get: function(target, prop) {
+            // Tangkap handler sukses
+            if (prop === 'withSuccessHandler') {
+              return function(cb) { successCb = cb; return this; };
+            }
+            // Tangkap handler error
+            if (prop === 'withFailureHandler') {
+              return function(cb) { failureCb = cb; return this; };
+            }
+            // Kirim request ke backend Code.gs
+            return function(payload) {
+              fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Wajib text/plain untuk bypass CORS Apps Script
+                body: JSON.stringify({ action: prop, data: payload || {} })
+              })
+              .then(res => res.json())
+              .then(data => {
+                if (successCb) successCb(data);
+              })
+              .catch(err => {
+                if (failureCb) failureCb(err);
+              });
+            };
+          }
+        });
+      }
+    }
+  };
+</script>
+
+    <style>
+        :root {
+            /* ================= DESIGN TOKENS · Trans Cafe Gading ================= */
+            /* Warm Editorial Palette — Cream, Espresso, Forest Teal accent */
+            --bg: #f7f5f2;
+            --bg-2: #f1ede7;
+            --surface: #ffffff;
+            --surface2: #f4efe8;
+            --surface3: #ede6dc;
+            --border: #e7ded2;
+            --border-light: #d6cabb;
+            --text: #241d18;          /* espresso — headline */
+            --text-muted: #6a594c;    /* medium roast — body */
+            --text-dim: #9c8a7b;      /* latte crema — meta */
+            --accent: #0f766e;        /* forest teal */
+            --accent-2: #0b5e58;
+            --accent-soft: rgba(15, 118, 110, 0.08);
+            --accent-glow: rgba(15, 118, 110, 0.22);
+            --green: #15803d;
+            --green-soft: #effaf1;
+            --red: #dc2626;
+            --red-soft: #fef2f2;
+            --amber: #b45309;
+            --amber-soft: #fffaef;
+            --blue: #0369a1;
+            --blue-soft: #eff8ff;
+
+            /* Type scale (major-third-ish) */
+            --fs-display: 1.55rem;
+            --fs-h1: 1.15rem;
+            --fs-h2: 0.98rem;
+            --fs-body: 0.875rem;
+            --fs-sm: 0.8rem;
+            --fs-xs: 0.72rem;
+            --fs-eyebrow: 0.68rem;
+
+            /* Radius & shadow */
+            --r-sm: 8px;
+            --r-md: 12px;
+            --r-lg: 16px;
+            --r-xl: 22px;
+            --shadow-sm: 0 1px 2px rgba(36,29,24,0.04);
+            --shadow-md: 0 4px 18px rgba(36,29,24,0.05), 0 1px 3px rgba(36,29,24,0.02);
+            --shadow-lg: 0 20px 60px rgba(36,29,24,0.12);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Sora', sans-serif;
+            background-color: var(--bg);
+            background-image:
+                radial-gradient(1200px 600px at 100% -10%, rgba(15,118,110,0.05), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(180,83,9,0.04), transparent 55%);
+            color: var(--text);
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+
+        /* Angka pakai tabular-nums agar kolom data rapi & profesional */
+        .tnum, td[data-num], input[type="number"], .data-table td { font-variant-numeric: tabular-nums; }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 99px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+        @keyframes fadeSlide { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 var(--accent-glow); }
+            70% { box-shadow: 0 0 0 10px transparent; }
+            100% { box-shadow: 0 0 0 0 transparent; }
+        }
+
+        .tab-content { display:none; }
+        .tab-content.active { display:block; animation: fadeSlide 0.3s ease; }
+
+        /* ---------- Typography helpers ---------- */
+        .eyebrow {
+            font-size: var(--fs-eyebrow); font-weight: 800; letter-spacing: 0.14em;
+            text-transform: uppercase; color: var(--text-dim);
+        }
+        .display-title { font-size: var(--fs-display); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; color: var(--text); }
+        .section-title { font-size: var(--fs-h2); font-weight: 800; letter-spacing: -0.01em; color: var(--text); margin:0; display:flex; align-items:center; gap:8px; }
+        .section-sub { font-size: var(--fs-xs); font-weight: 500; color: var(--text-dim); margin: 3px 0 0; }
+
+        #loader {
+            display:none; position:fixed; inset:0;
+            background:rgba(247, 245, 242, 0.82); backdrop-filter:blur(8px);
+            z-index:9999; align-items:center; justify-content:center; flex-direction:column;
+        }
+        #loader.show { display:flex; }
+        .spinner {
+            width:42px; height:42px; border-radius:50%;
+            border:3px solid var(--border); border-top-color:var(--accent);
+            animation:spin 0.8s linear infinite;
+        }
+
+        #detail-modal {
+            display:none; position:fixed; inset:0;
+            background:rgba(36, 29, 24, 0.42); backdrop-filter:blur(8px);
+            z-index:9990; align-items:center; justify-content:center; padding:1rem;
+        }
+        #detail-modal.show { display:flex; animation:fadeSlide 0.2s ease; }
+
+        header {
+            background: linear-gradient(135deg, var(--surface) 0%, #fbf9f6 100%);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            box-shadow: 0 2px 14px rgba(36, 29, 24, 0.03);
+        }
+
+        .brand-badge {
+            width:42px; height:42px; border-radius:13px;
+            background: linear-gradient(145deg, var(--accent) 0%, var(--accent-2) 100%);
+            display:flex; align-items:center; justify-content:center;
+            box-shadow: 0 6px 16px rgba(15,118,110,0.28); flex-shrink:0;
+        }
+
+        .tab-nav {
+            display:flex; overflow-x:auto; gap:2px; scrollbar-width:none;
+            border-bottom:1px solid var(--border); padding-bottom: 1px;
+        }
+        .tab-nav::-webkit-scrollbar { display:none; }
+        .tab-btn {
+            display:flex; align-items:center; gap:8px; padding:14px 18px;
+            font-size:var(--fs-sm); font-weight:700; color:var(--text-muted);
+            white-space:nowrap; border:none; background:transparent;
+            cursor:pointer; transition:all 0.22s; position:relative;
+            letter-spacing:0.005em; border-radius: 9px 9px 0 0;
+        }
+        .tab-btn::after {
+            content:''; position:absolute; bottom:0; left:12px; right:12px; height:3px;
+            background:var(--accent); transform:scaleX(0); transition:transform 0.22s;
+            border-radius:99px 99px 0 0;
+        }
+        .tab-btn.active { color:var(--accent); background: var(--accent-soft); }
+        .tab-btn.active::after { transform:scaleX(1); }
+        .tab-btn:hover:not(.active) { color:var(--text); background:rgba(36, 29, 24, 0.03); }
+
+        .card {
+            background:var(--surface); border:1px solid var(--border);
+            border-radius:var(--r-lg); overflow:hidden; box-shadow: var(--shadow-md);
+        }
+        .card-header {
+            background: linear-gradient(90deg, var(--surface) 0%, #fdfcfa 100%);
+            border-bottom:1px solid var(--border); padding:18px 20px;
+        }
+
+        .inp {
+            width:100%; background:var(--surface); border:1px solid var(--border);
+            border-radius:var(--r-md); padding:10px 14px; color:var(--text);
+            font-family:'Sora',sans-serif; font-size:var(--fs-body); transition:all 0.22s;
+            outline:none; box-shadow: inset 0 1px 2px rgba(36,29,24,0.02);
+        }
+        .inp:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft), inset 0 1px 2px rgba(36,29,24,0.01); }
+        .inp:read-only { background: var(--surface2); color:var(--text-muted); cursor:not-allowed; opacity:0.85; }
+        .inp::placeholder { color:var(--text-dim); }
+
+        label.lbl { display:block; font-size:var(--fs-xs); font-weight:800; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.06em; text-transform:uppercase; }
+
+        .btn-primary {
+            display:inline-flex; align-items:center; justify-content:center; gap:8px;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color:#fff; font-family:'Sora',sans-serif; font-size:var(--fs-body); font-weight:700;
+            padding:11px 22px; border-radius:var(--r-md); border:none; cursor:pointer;
+            transition:all 0.22s; letter-spacing:0.01em; box-shadow: 0 4px 12px rgba(15, 118, 110, 0.22);
+        }
+        .btn-primary:hover { transform:translateY(-1.5px); box-shadow:0 6px 20px rgba(15, 118, 110, 0.34); }
+        .btn-primary:active { transform:translateY(0); }
+        .btn-primary:disabled { background:var(--border-light); color:var(--text-dim); cursor:not-allowed; transform:none; box-shadow:none; }
+
+        .btn-ghost {
+            display:inline-flex; align-items:center; justify-content:center; gap:8px;
+            background:var(--surface); color:var(--text-muted); font-family:'Sora',sans-serif;
+            font-size:var(--fs-sm); font-weight:700; padding:9px 16px;
+            border-radius:99px; border:1px solid var(--border); cursor:pointer; transition:all 0.22s;
+        }
+        .btn-ghost:hover { color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
+
+        .btn-save-big {
+            width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
+            background:linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color:#fff; font-family:'Sora',sans-serif; font-size:0.95rem; font-weight:800;
+            padding:14px; border-radius:var(--r-md); border:none; cursor:pointer;
+            transition:all 0.22s; letter-spacing:0.01em; box-shadow: 0 4px 14px rgba(15, 118, 110, 0.25);
+        }
+        .btn-save-big:hover { transform:translateY(-1.5px); box-shadow:0 8px 24px rgba(15, 118, 110, 0.4); }
+        .btn-save-big:disabled { background:var(--surface2); color:var(--text-dim); cursor:not-allowed; transform:none; box-shadow:none; }
+
+        .data-table { width:100%; border-collapse:separate; border-spacing: 0; }
+        .data-table thead th {
+            padding:12px 16px; text-align:left; font-size:var(--fs-xs); font-weight:800;
+            color:var(--text-muted); text-transform:uppercase; letter-spacing:0.07em;
+            background:var(--surface2); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5;
+        }
+        .data-table tbody tr { border-bottom:1px solid var(--border); transition:background 0.15s; }
+        .data-table tbody tr:hover { background:rgba(15, 118, 110, 0.03); }
+        .data-table tbody td { padding:13px 16px; font-size:var(--fs-body); border-bottom: 1px solid var(--border); }
+        .data-table tbody tr:last-child td { border-bottom:none; }
+
+        .group-hdr td { padding:0 !important; border-bottom:1px solid var(--border) !important; }
+        .group-hdr-inner {
+            display:flex; align-items:center; justify-content:space-between; padding:10px 16px; cursor:pointer;
+            background:linear-gradient(90deg, var(--accent-soft) 0%, transparent 100%);
+            user-select:none; transition:background 0.2s;
+        }
+        .group-hdr-inner:hover { background:rgba(15, 118, 110, 0.12); }
+
+        .badge {
+            display:inline-flex; align-items:center; gap:4px; padding:3px 10px;
+            border-radius:99px; font-size:var(--fs-xs); font-weight:800; letter-spacing:0.03em;
+        }
+        .badge-in  { background:var(--green-soft); color:var(--green); border:1px solid rgba(21, 128, 61, 0.2); }
+        .badge-out { background:var(--red-soft);   color:var(--red);   border:1px solid rgba(220, 38, 38, 0.2); }
+        .badge-init { background:var(--amber-soft); color:var(--amber); border:1px solid rgba(180, 83, 9, 0.2); }
+        .badge-adj { background:#f5f3ff; color:#6d28d9; border:1px solid rgba(109,40,217,0.2); }
+        .badge-neutral { background:var(--surface3); color:var(--text-muted); border:1px solid var(--border-light); }
+        .badge-count { background:var(--accent-soft); color:var(--accent); border:1px solid rgba(15, 118, 110, 0.25); font-size:var(--fs-xs); padding:3px 10px; border-radius:99px; font-weight:800; }
+
+        .mono { font-family:'JetBrains Mono', monospace; font-size:var(--fs-xs); color:var(--text-muted); background: var(--surface2); padding: 2px 6px; border-radius: 4px; }
+        .sisa-pos { color: var(--blue); font-weight:800; }
+        .sisa-neg { color:var(--red); font-weight:800; }
+
+        /* ---------- Stat cards (KPI) ---------- */
+        .stat-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:14px; }
+        .stat-card {
+            background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md);
+            padding:16px 18px; position:relative; overflow:hidden; box-shadow: var(--shadow-sm);
+        }
+        .stat-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent); }
+        .stat-card.pos::before { background:var(--green); }
+        .stat-card.neg::before { background:var(--red); }
+        .stat-card.net::before { background:var(--blue); }
+        .stat-card.warn::before { background:var(--amber); }
+        .stat-label { font-size:var(--fs-eyebrow); font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-dim); display:flex; align-items:center; gap:6px; }
+        .stat-value { font-size:1.5rem; font-weight:800; letter-spacing:-0.02em; margin-top:6px; color:var(--text); font-variant-numeric: tabular-nums; }
+        .stat-hint { font-size:var(--fs-xs); color:var(--text-dim); margin-top:2px; font-weight:500; }
+
+        /* ---------- Info banner ---------- */
+        .info-banner {
+            display:flex; gap:12px; align-items:flex-start;
+            background: linear-gradient(90deg, var(--accent-soft), transparent);
+            border:1px solid rgba(15,118,110,0.18); border-left:4px solid var(--accent);
+            border-radius:var(--r-md); padding:14px 16px;
+        }
+        .info-banner .ph { color:var(--accent); font-size:1.25rem; margin-top:1px; }
+
+        /* ---------- Opname input ---------- */
+        .opname-input {
+            width:110px; text-align:right; background:var(--surface); border:1.5px solid var(--border-light);
+            border-radius:8px; padding:8px 10px; font-family:'JetBrains Mono',monospace; font-size:0.85rem; font-weight:600;
+            color:var(--text); outline:none; transition:all 0.2s; font-variant-numeric: tabular-nums;
+        }
+        .opname-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+        .opname-input.filled { border-color:var(--accent); background:var(--accent-soft); }
+
+        .chip {
+            display:inline-flex; align-items:center; gap:6px; padding:7px 13px; border-radius:99px;
+            font-size:var(--fs-xs); font-weight:800; letter-spacing:0.02em; border:1px solid var(--border);
+            background:var(--surface); color:var(--text-muted);
+        }
+        .chip .n { font-family:'JetBrains Mono',monospace; }
+        .chip.pos { background:var(--green-soft); color:var(--green); border-color:rgba(21,128,61,0.25); }
+        .chip.neg { background:var(--red-soft); color:var(--red); border-color:rgba(220,38,38,0.25); }
+        .chip.acc { background:var(--accent-soft); color:var(--accent); border-color:rgba(15,118,110,0.25); }
+
+        .ts-wrapper.single .ts-control {
+            background:var(--surface) !important; border:1px solid var(--border) !important;
+            border-radius:var(--r-md) !important; padding:10px 14px !important;
+            font-family:'Sora',sans-serif !important; font-size:var(--fs-body) !important;
+            color:var(--text) !important; box-shadow:none !important;
+        }
+        .ts-wrapper.focus .ts-control { border-color:var(--accent) !important; box-shadow:0 0 0 3px var(--accent-soft) !important; }
+        .ts-dropdown {
+            background:var(--surface) !important; border:1px solid var(--border) !important;
+            border-radius:var(--r-md) !important; box-shadow:0 10px 30px rgba(36,29,24,0.1) !important;
+            margin-top:6px !important; padding: 4px !important;
+        }
+        .ts-dropdown .option { padding:10px 14px !important; font-size:var(--fs-body) !important; color:var(--text-muted) !important; border-radius: 8px; margin: 2px 0; }
+        .ts-dropdown .option:hover, .ts-dropdown .option.active { background:var(--accent-soft) !important; color:var(--accent) !important; }
+        .ts-dropdown .no-results { padding:12px 14px !important; color:var(--text-dim) !important; font-size:var(--fs-sm) !important; }
+        .ts-control input::placeholder { color:var(--text-dim) !important; }
+
+        input[type="date"], input[type="month"] {
+            background:transparent; border:none; color:var(--text-muted);
+            font-family:'Sora',sans-serif; font-size:var(--fs-sm); outline:none;
+        }
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="month"]::-webkit-calendar-picker-indicator { filter:opacity(0.6) sepia(1) saturate(5) hue-rotate(140deg); cursor:pointer; }
+
+        .date-wrap {
+            display:flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--border);
+            border-radius:var(--r-md); padding:6px 12px; box-shadow: inset 0 1px 2px rgba(36,29,24,0.02);
+        }
+
+        .logo-dot { width:9px; height:9px; border-radius:50%; background:var(--accent); animation:pulse-ring 2s infinite; }
+
+        /* ---------- Indikator sinkronisasi background (NON-BLOCKING) ---------- */
+        #sync-pill {
+            display:none; align-items:center; gap:7px; padding:6px 13px; border-radius:99px;
+            font-size:var(--fs-xs); font-weight:800; letter-spacing:0.02em;
+            border:1px solid var(--border); background:var(--surface); color:var(--text-muted);
+            transition:opacity 0.3s; white-space:nowrap;
+        }
+        #sync-pill.show { display:inline-flex; }
+        #sync-pill.syncing { background:var(--accent-soft); color:var(--accent); border-color:rgba(15,118,110,0.25); }
+        #sync-pill.ok      { background:var(--green-soft); color:var(--green); border-color:rgba(21,128,61,0.2); }
+        #sync-pill.warn    { background:var(--amber-soft); color:var(--amber); border-color:rgba(180,83,9,0.25); }
+        #sync-pill .dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+        #sync-pill.syncing .dot { animation:pulse-ring 1.4s infinite; }
+
+        /* ---------- Draft Stock Opname ---------- */
+        .draft-banner {
+            display:none; gap:14px; align-items:flex-start;
+            background: linear-gradient(90deg, var(--amber-soft), transparent);
+            border:1px solid rgba(180,83,9,0.22); border-left:4px solid var(--amber);
+            border-radius:var(--r-md); padding:16px 18px;
+        }
+        .draft-banner.show { display:flex; }
+        .draft-meta { display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:8px; font-size:var(--fs-xs); color:var(--text-muted); font-weight:600; }
+        .draft-meta b { color:var(--text); font-weight:800; }
+        .draft-status {
+            font-size:var(--fs-xs); font-weight:700; color:var(--text-dim);
+            display:inline-flex; align-items:center; gap:6px; min-height:18px;
+        }
+        .draft-status.saved { color:var(--green); }
+        .draft-status.saving { color:var(--accent); }
+        .draft-status.failed { color:var(--red); }
+        .btn-warn {
+            display:inline-flex; align-items:center; justify-content:center; gap:8px;
+            background:var(--surface); color:var(--amber); font-family:'Sora',sans-serif;
+            font-size:var(--fs-sm); font-weight:800; padding:9px 16px;
+            border-radius:99px; border:1px solid rgba(180,83,9,0.35); cursor:pointer; transition:all 0.22s;
+        }
+        .btn-warn:hover { background:var(--amber-soft); }
+        .btn-danger-ghost {
+            display:inline-flex; align-items:center; justify-content:center; gap:8px;
+            background:var(--surface); color:var(--red); font-family:'Sora',sans-serif;
+            font-size:var(--fs-sm); font-weight:800; padding:9px 16px;
+            border-radius:99px; border:1px solid rgba(220,38,38,0.3); cursor:pointer; transition:all 0.22s;
+        }
+        .btn-danger-ghost:hover { background:var(--red-soft); }
+        .scope-note { font-size:var(--fs-xs); color:var(--text-dim); font-weight:600; display:none; align-items:center; gap:6px; }
+        .scope-note.show { display:inline-flex; }
+
+        @media (max-width: 640px) {
+            .tab-btn { padding:12px 13px; font-size:var(--fs-xs); }
+            .data-table thead th, .data-table tbody td { padding:10px 12px; }
+            .display-title { font-size:1.3rem; }
+        }
+/* ---------- Layout Tab Keluar (Desktop Side-by-Side) ---------- */
+        .keluar-grid {
+            display:grid;
+            grid-template-columns: 1fr;
+            gap:20px;
+            align-items:start;
+        }
+        @media (min-width: 1024px) {
+            .keluar-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        /* ---------- SCAN BARCODE ---------- */
+        /* Tombol scan kecil di dalam kolom pencarian */
+        .btn-scan-inline {
+            position:absolute; right:5px; top:50%; transform:translateY(-50%);
+            width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center;
+            background:var(--accent-soft); color:var(--accent);
+            border:1px solid rgba(15,118,110,0.22); border-radius:9px;
+            cursor:pointer; transition:all 0.2s; font-size:1.05rem; padding:0;
+        }
+        .btn-scan-inline:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+        .btn-scan-inline:active { transform:translateY(-50%) scale(0.94); }
+
+        /* Tombol scan bentuk chip (dipakai di label Nama Item) */
+        .btn-scan-chip {
+            display:inline-flex; align-items:center; gap:6px;
+            background:var(--accent-soft); color:var(--accent);
+            border:1px solid rgba(15,118,110,0.22); border-radius:99px;
+            font-family:'Sora',sans-serif; font-size:var(--fs-xs); font-weight:800;
+            letter-spacing:0.04em; padding:5px 12px; cursor:pointer; transition:all 0.2s;
+            text-transform:none; white-space:nowrap;
+        }
+        .btn-scan-chip:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+        .btn-scan-chip i { font-size:1rem; }
+
+        /* Modal scan */
+        #scan-modal {
+            display:none; position:fixed; inset:0;
+            background:rgba(36,29,24,0.55); backdrop-filter:blur(8px);
+            z-index:9992; align-items:center; justify-content:center; padding:1rem;
+        }
+        #scan-modal.show { display:flex; animation:fadeSlide 0.2s ease; }
+        .scan-shell {
+            background:var(--surface); border:1px solid var(--border); border-radius:var(--r-xl);
+            width:100%; max-width:470px; max-height:94dvh; overflow-y:auto;
+            display:flex; flex-direction:column; box-shadow:var(--shadow-lg);
+        }
+        .scan-stage {
+            position:relative; width:100%; aspect-ratio:4/3; background:#161311;
+            overflow:hidden; flex-shrink:0;
+        }
+        #scan-video { width:100%; height:100%; object-fit:cover; display:block; background:#161311; }
+        .scan-frame { position:absolute; inset:16% 9%; display:none; pointer-events:none; }
+        .scan-stage.live .scan-frame { display:block; }
+        .scan-stage.has-msg .scan-frame { display:none; }
+        .scan-frame::before {
+            content:''; position:absolute; inset:0; border-radius:14px;
+            border:2px solid rgba(255,255,255,0.9); box-shadow:0 0 0 9999px rgba(22,19,17,0.42);
+        }
+        .scan-laser {
+            position:absolute; left:6px; right:6px; height:2px; border-radius:99px;
+            background:linear-gradient(90deg, transparent, #ff4d4d, transparent);
+            box-shadow:0 0 12px rgba(255,77,77,0.85); animation:scanSweep 2.1s ease-in-out infinite;
+        }
+        @keyframes scanSweep { 0%{top:6%} 50%{top:94%} 100%{top:6%} }
+        .scan-cam-msg {
+            position:absolute; inset:0; display:none; flex-direction:column; align-items:center;
+            justify-content:center; gap:10px; text-align:center; padding:22px;
+            color:#f3ece4; font-size:var(--fs-sm); font-weight:600; line-height:1.55;
+            background:rgba(22,19,17,0.88);
+        }
+        .scan-cam-msg.show { display:flex; }
+        .scan-cam-msg i { font-size:2rem; color:#f0b429; }
+        .scan-tools {
+            position:absolute; left:10px; right:10px; bottom:10px;
+            display:flex; gap:8px; align-items:center; justify-content:space-between;
+        }
+        .scan-stage:not(.live) .scan-tools { display:none; }
+        .scan-select {
+            max-width:64%; background:rgba(22,19,17,0.72); color:#fff; border:1px solid rgba(255,255,255,0.25);
+            border-radius:99px; padding:6px 12px; font-family:'Sora',sans-serif; font-size:var(--fs-xs);
+            font-weight:700; outline:none; cursor:pointer;
+        }
+        .scan-torch {
+            width:36px; height:36px; border-radius:50%; border:1px solid rgba(255,255,255,0.25);
+            background:rgba(22,19,17,0.72); color:#fff; cursor:pointer; display:none;
+            align-items:center; justify-content:center; font-size:1.1rem; margin-left:auto; transition:all 0.2s;
+        }
+        .scan-torch.on { background:#f0b429; color:#241d18; border-color:#f0b429; }
+        .scan-status {
+            display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+            background:var(--surface2); border:1px solid var(--border); border-radius:var(--r-md);
+            padding:10px 12px; font-size:var(--fs-sm); font-weight:600; color:var(--text-muted); line-height:1.5;
+        }
+        .scan-status i { font-size:1.1rem; color:var(--accent); flex-shrink:0; }
+        .scan-status.warn { background:var(--amber-soft); border-color:rgba(180,83,9,0.25); color:var(--amber); }
+        .scan-status.warn i { color:var(--amber); }
+        .scan-status.ok { background:var(--green-soft); border-color:rgba(21,128,61,0.25); color:var(--green); }
+        .scan-status.ok i { color:var(--green); }
+        .scan-hint { font-size:var(--fs-xs); color:var(--text-dim); font-weight:600; margin:6px 0 0; line-height:1.5; }
+
+        /* ---------- Print report ---------- */
+        .print-only { display:none; }
+        @media print {
+            body { overflow:visible; height:auto; background:#fff; display:block; }
+            header, .tab-nav, .no-print, #loader, #detail-modal, #scan-modal { display:none !important; }
+            main { overflow:visible !important; padding:0 !important; max-width:100% !important; }
+            .tab-content { display:none !important; }
+            .tab-content.active { display:block !important; }
+            .card { box-shadow:none; border:1px solid #ccc; }
+            .print-only { display:block; }
+            .data-table tbody tr { page-break-inside:avoid; }
+            .grp-laporan-print { display:table-row !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loader">
+        <div class="spinner mb-3"></div>
+        <p style="font-size:var(--fs-sm); font-weight:800; color:var(--text-muted); letter-spacing:0.1em; text-transform:uppercase; margin-top:14px;">Memproses...</p>
+    </div>
+
+    <!-- DETAIL STOCK LOG MODAL -->
+    <div id="detail-modal">
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--r-xl); width:100%; max-width:880px; max-height:90dvh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-lg);">
+            <div class="card-header" style="display:flex; align-items:center; justify-content:space-between; background: linear-gradient(90deg, var(--surface) 0%, var(--surface2) 100%);">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <i class="ph ph-chart-line-up" style="color:var(--accent); font-size:1.25rem;"></i>
+                    <span style="font-size:var(--fs-body); font-weight:700; color:var(--text-muted);">Detail Log:</span>
+                    <span id="modal-item-name" style="font-size:0.98rem; font-weight:800; color:var(--accent);"></span>
+                </div>
+                <button onclick="closeModal()" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:6px; border-radius:8px; transition:all 0.22s; font-size:1.3rem;" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text-dim)'">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <div style="overflow-y:auto; flex:1;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Tanggal</th>
+                            <th>Exp Date</th>
+                            <th style="text-align:center;">Jenis</th>
+                            <th style="text-align:right;">QTY</th>
+                            <th style="text-align:right; color:var(--accent);">Sisa</th>
+                            <th>UOM</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modal-tbody">
+                        <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-dim);">Memuat data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div style="padding:14px 20px; border-top:1px solid var(--border); background:var(--surface); display:flex; justify-content:flex-end;">
+                <button onclick="closeModal()" class="btn-ghost">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN BRAND HEADER -->
+    <header>
+        <div style="max-width:1180px; margin:0 auto; padding:0 20px; display:flex; align-items:center; height:70px; gap:14px;">
+            <div class="brand-badge"><i class="ph-fill ph-package" style="color:#fff; font-size:1.4rem;"></i></div>
+            <div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <h1 class="display-title" style="font-size:1.12rem;">Trans Cafe Gading</h1>
+                    <span class="logo-dot"></span>
+                </div>
+                <p class="eyebrow" style="margin:2px 0 0;">Warehouse Inventory System</p>
+            </div>
+            <!-- Indikator background hydration: TIDAK menutup layar -->
+            <div style="margin-left:auto;">
+                <span id="sync-pill"><span class="dot"></span><span id="sync-pill-text">Menyinkronkan…</span></span>
+            </div>
+        </div>
+        <div style="max-width:1180px; margin:0 auto; padding:0 20px;">
+            <nav class="tab-nav">
+                <button class="tab-btn active" id="btn-tab-keluar" onclick="switchTab('tab-keluar')">
+                    <i class="ph ph-upload-simple" style="font-size:1.05rem;"></i> Keluar
+                </button>
+                <button class="tab-btn" id="btn-tab-riwayat-keluar" onclick="switchTab('tab-riwayat-keluar')">
+                    <i class="ph ph-clock-counter-clockwise" style="font-size:1.05rem;"></i> Riwayat Keluar
+                </button>
+                <button class="tab-btn" id="btn-tab-masuk" onclick="switchTab('tab-masuk')">
+                    <i class="ph ph-download-simple" style="font-size:1.05rem;"></i> Data Masuk
+                </button>
+                <button class="tab-btn" id="btn-tab-stock" onclick="switchTab('tab-stock')">
+                    <i class="ph ph-chart-bar" style="font-size:1.05rem;"></i> Kartu Stock
+                </button>
+                <button class="tab-btn" id="btn-tab-opname" onclick="switchTab('tab-opname')">
+                    <i class="ph ph-clipboard-text" style="font-size:1.05rem;"></i> Stock Opname
+                </button>
+                <button class="tab-btn" id="btn-tab-laporan" onclick="switchTab('tab-laporan')">
+                    <i class="ph ph-file-text" style="font-size:1.05rem;"></i> Laporan Opname
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main style="flex:1; overflow-y:auto; padding:20px; max-width:1180px; margin:0 auto; width:100%;">
+
+        <!-- TAB KELUAR -->
+        <div id="tab-keluar" class="tab-content active">
+            <div class="keluar-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="eyebrow">Input Transaksi</span>
+                        <h2 class="section-title" style="margin-top:4px;">
+                            <i class="ph ph-pencil-line" style="color:var(--accent); font-size:1.15rem;"></i> Tambah Item Keluar
+                        </h2>
+                    </div>
+                    <div style="padding:20px; display:flex; flex-direction:column; gap:16px;">
+                        <div>
+                            <label class="lbl">Tanggal Transaksi</label>
+                            <input type="date" id="out-tanggal" class="inp">
+                        </div>
+                        <div>
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                                <label class="lbl">Nama Item</label>
+                                <button type="button" class="btn-scan-chip" style="margin-bottom:6px;" onclick="openScanner('out-item')" title="Scan barcode item">
+                                    <i class="ph ph-barcode"></i> Scan Barcode
+                                </button>
+                            </div>
+                            <select id="out-item" placeholder="Cari item..."></select>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+                            <div>
+                                <label class="lbl">UOM</label>
+                                <input type="text" id="out-uom" readonly class="inp">
+                            </div>
+                            <div>
+                                <label class="lbl">ALT UOM</label>
+                                <input type="text" id="out-altuom" readonly class="inp">
+                            </div>
+                            <div>
+                                <label class="lbl">Sisa Stock</label>
+                                <input type="text" id="out-sisa-stock" readonly class="inp" style="font-weight:800; color:var(--blue);">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="lbl">QTY Keluar</label>
+                            <input type="number" id="out-qty" step="0.01" min="0.01" placeholder="0.00" class="inp" style="text-align:right; font-size:1.15rem; font-weight:800; color:var(--accent);">
+                        </div>
+                        <button onclick="addItemToCart()" class="btn-primary" style="margin-top: 4px; width:100%;">
+                            <i class="ph ph-plus-circle" style="font-size:1.15rem;"></i> Tambah ke Daftar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card" style="display:flex; flex-direction:column;">
+                    <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
+                        <div>
+                            <span class="eyebrow">Keranjang</span>
+                            <h2 class="section-title" style="margin-top:4px;">Daftar Sementara</h2>
+                        </div>
+                        <span id="cart-count" class="badge-count">0 Item</span>
+                    </div>
+                    <div style="overflow-x:auto; flex: 1; min-height: 220px;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Item</th><th>ALT UOM</th>
+                                    <th style="text-align:right;">QTY</th><th>UOM</th>
+                                    <th style="text-align:center;">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cart-tbody">
+                                <tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-dim); font-size:var(--fs-sm);">Belum ada item yang ditambahkan</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="padding:16px 20px; border-top:1px solid var(--border); background:var(--surface2); margin-top:auto;">
+                        <button onclick="saveOutbound()" id="btn-save-outbound" disabled class="btn-save-big">
+                            <i class="ph ph-floppy-disk" style="font-size:1.2rem;"></i> Simpan Transaksi Keluar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB RIWAYAT KELUAR -->
+        <div id="tab-riwayat-keluar" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div style="display:flex; flex-direction:column; gap:14px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                            <div>
+                                <span class="eyebrow">Histori Transaksi</span>
+                                <h2 class="section-title" style="margin-top:4px;">
+                                    <i class="ph ph-clock-counter-clockwise" style="color:var(--accent); font-size:1.15rem;"></i> Riwayat Data Keluar
+                                </h2>
+                                <p class="section-sub">Dikelompokkan per tanggal transaksi</p>
+                            </div>
+                            <button onclick="loadOutboundData()" class="btn-ghost" style="font-size:var(--fs-sm);">
+                                <i class="ph ph-arrows-clockwise"></i> Refresh Data
+                            </button>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                            <div style="position:relative; flex:1; min-width:180px;">
+                                <i class="ph ph-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none;"></i>
+                                <input type="text" id="filter-out-name" placeholder="Cari nama item..." class="inp" style="padding-left:36px; padding-right:44px;" oninput="_debouncedFilterOutbound()">
+                                <button type="button" class="btn-scan-inline" onclick="openScanner('filter-out-name')" title="Scan barcode item"><i class="ph ph-barcode"></i></button>
+                            </div>
+                            <div class="date-wrap">
+                                <input type="date" id="filter-out-start">
+                                <span style="color:var(--text-dim); font-weight:700;">—</span>
+                                <input type="date" id="filter-out-end">
+                            </div>
+                            <button onclick="applyFilterOutbound()" class="btn-primary" style="padding:9px 16px; font-size:var(--fs-sm);">
+                                <i class="ph ph-funnel"></i> Terapkan Filter
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div style="overflow-x:auto; max-height:520px; overflow-y:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr id="outbound-thead-tr">
+                                <th>Tanggal</th><th>Nama Item</th><th>ALT UOM</th>
+                                <th style="text-align:right;">QTY</th><th>UOM</th>
+                                <th style="text-align:center;">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="outbound-tbody">
+                            <tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim); font-size:var(--fs-sm);">Belum ada data keluar</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB DATA MASUK -->
+        <div id="tab-masuk" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div style="display:flex; flex-direction:column; gap:14px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                            <div>
+                                <span class="eyebrow">Histori Transaksi</span>
+                                <h2 class="section-title" style="margin-top:4px;">
+                                    <i class="ph ph-download-simple" style="color:var(--accent); font-size:1.15rem;"></i> Riwayat Data Masuk
+                                </h2>
+                                <p class="section-sub">Dikelompokkan per tanggal masuk</p>
+                            </div>
+                            <button onclick="loadInboundData()" class="btn-ghost" style="font-size:var(--fs-sm);">
+                                <i class="ph ph-arrows-clockwise"></i> Refresh Data
+                            </button>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                            <div style="position:relative; flex:1; min-width:180px;">
+                                <i class="ph ph-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none;"></i>
+                                <input type="text" id="filter-in-name" placeholder="Cari nama item..." class="inp" style="padding-left:36px; padding-right:44px;" oninput="_debouncedFilterInbound()">
+                                <button type="button" class="btn-scan-inline" onclick="openScanner('filter-in-name')" title="Scan barcode item"><i class="ph ph-barcode"></i></button>
+                            </div>
+                            <div class="date-wrap">
+                                <input type="date" id="filter-in-start">
+                                <span style="color:var(--text-dim); font-weight:700;">—</span>
+                                <input type="date" id="filter-in-end">
+                            </div>
+                            <button onclick="applyFilterInbound()" class="btn-primary" style="padding:9px 16px; font-size:var(--fs-sm);">
+                                <i class="ph ph-funnel"></i> Terapkan Filter
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div style="overflow-x:auto; max-height:520px; overflow-y:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Tanggal</th><th>ID</th><th>Nama Item</th><th>Exp Date</th>
+                                <th>ALT UOM</th><th style="text-align:right;">QTY</th>
+                                <th>UOM</th><th style="text-align:center;">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inbound-tbody">
+                            <tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim); font-size:var(--fs-sm);">Belum ada data masuk</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB KARTU STOCK -->
+        <div id="tab-stock" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div style="display:flex; flex-direction:column; gap:14px;">
+                        <div>
+                            <span class="eyebrow">Saldo Persediaan</span>
+                            <h2 class="section-title" style="margin-top:4px;">
+                                <i class="ph ph-chart-bar" style="color:var(--accent); font-size:1.15rem;"></i> Kartu Stock (Saldo Log)
+                            </h2>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                            <div style="position:relative; flex:1; min-width:180px;">
+                                <i class="ph ph-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none;"></i>
+                                <input type="text" id="filter-item-name" placeholder="Cari nama item..." class="inp" style="padding-left:36px; padding-right:44px;" oninput="_debouncedFilterStock()">
+                                <button type="button" class="btn-scan-inline" onclick="openScanner('filter-item-name')" title="Scan barcode item"><i class="ph ph-barcode"></i></button>
+                            </div>
+                            <div class="date-wrap">
+                                <input type="date" id="filter-start">
+                                <span style="color:var(--text-dim); font-weight:700;">—</span>
+                                <input type="date" id="filter-end">
+                            </div>
+                            <button onclick="loadStockData()" class="btn-primary" style="padding:9px 16px; font-size:var(--fs-sm);">
+                                <i class="ph ph-funnel"></i> Ambil Periode
+                            </button>
+                        </div>
+                        <span id="stock-scope-note" class="scope-note">
+                            <i class="ph ph-info"></i> Menampilkan saldo bulan berjalan · periode penuh sedang dimuat di latar belakang…
+                        </span>
+                    </div>
+                </div>
+                <div style="overflow-x:auto; max-height:520px; overflow-y:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nama Item</th>
+                                <th style="text-align:center; color:var(--amber);">Stock Awal</th>
+                                <th style="text-align:center; color:var(--green);">Masuk (IN)</th>
+                                <th style="text-align:center; color:var(--red);">Keluar (OUT)</th>
+                                <th style="text-align:center; color:var(--accent);">Sisa Stock</th>
+                                <th>UOM</th>
+                                <th style="text-align:center;">Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stock-tbody">
+                            <tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:var(--fs-sm);">Belum ada data kartu stock</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB STOCK OPNAME -->
+        <div id="tab-opname" class="tab-content">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+
+                <!-- DRAFT DITEMUKAN -->
+                <div id="opn-draft-banner" class="draft-banner">
+                    <i class="ph ph-floppy-disk-back" style="color:var(--amber); font-size:1.4rem; margin-top:2px;"></i>
+                    <div style="flex:1;">
+                        <div style="font-size:var(--fs-h2); font-weight:800; color:var(--text);">Draft Stock Opname ditemukan</div>
+                        <p style="font-size:var(--fs-sm); color:var(--text-muted); margin:4px 0 0;">
+                            Progress perhitungan sebelumnya belum diproses. Anda dapat melanjutkannya tanpa mengulang dari awal.
+                        </p>
+                        <div class="draft-meta">
+                            <span>Periode: <b id="draft-info-periode">—</b></span>
+                            <span>PIC: <b id="draft-info-pic">—</b></span>
+                            <span>Progress: <b id="draft-info-progress">0 / 0 item</b></span>
+                            <span>Terakhir disimpan: <b id="draft-info-saved">—</b></span>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:14px;">
+                            <button onclick="resumeOpnameDraft()" class="btn-primary" style="padding:9px 18px; font-size:var(--fs-sm);">
+                                <i class="ph ph-arrow-counter-clockwise"></i> Lanjutkan Draft
+                            </button>
+                            <button onclick="startNewOpname()" class="btn-ghost">
+                                <i class="ph ph-file-plus"></i> Buat Baru
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SETUP CARD -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="eyebrow">Cut-Off Persediaan Bulanan</span>
+                        <h2 class="section-title" style="margin-top:4px;">
+                            <i class="ph ph-clipboard-text" style="color:var(--accent); font-size:1.15rem;"></i> Setup Stock Opname
+                        </h2>
+                        <p class="section-sub">Bandingkan stock fisik gudang dengan stock sistem, lalu proses selisih menjadi adjustment otomatis.</p>
+                    </div>
+                    <div style="padding:20px; display:flex; flex-direction:column; gap:16px;">
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px;">
+                            <div>
+                                <label class="lbl">Tanggal Cut-Off</label>
+                                <input type="date" id="opn-tanggal" class="inp" onchange="syncOpnamePeriode()">
+                            </div>
+                            <div>
+                                <label class="lbl">Periode Laporan</label>
+                                <input type="text" id="opn-periode" class="inp" readonly>
+                            </div>
+                            <div>
+                                <label class="lbl">Petugas / PIC</label>
+                                <input type="text" id="opn-petugas" class="inp" placeholder="Nama petugas hitung">
+                            </div>
+                        </div>
+                        <div class="info-banner">
+                            <i class="ph ph-info"></i>
+                            <div style="font-size:var(--fs-sm); color:var(--text-muted); line-height:1.55;">
+                                <b style="color:var(--text);">Logika Adjustment Otomatis:</b><br>
+                                Selisih <b style="color:var(--green);">POSITIF</b> (fisik &gt; sistem) → tercatat ke <b>Data Masuk</b> sebagai <span class="badge badge-adj" style="padding:1px 7px;">ADJUSTMENT</span> &nbsp;·&nbsp;
+                                Selisih <b style="color:var(--red);">NEGATIF</b> (fisik &lt; sistem) → tercatat ke <b>Data Keluar</b> sebagai <span class="badge badge-adj" style="padding:1px 7px;">ADJUSTMENT</span>.
+                                Setelah diproses, stock sistem otomatis menyamai stock fisik.
+                            </div>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:10px;">
+                            <button onclick="loadOpnameSnapshot()" class="btn-primary">
+                                <i class="ph ph-download-simple" style="font-size:1.1rem;"></i> Muat Stock Sistem
+                            </button>
+                            <button onclick="setupOpnameSheet()" class="btn-ghost">
+                                <i class="ph ph-table" style="font-size:1.05rem;"></i> Setup Sheet OPNAME
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- COUNTING CARD -->
+                <div class="card" style="display:flex; flex-direction:column;">
+                    <div class="card-header" style="display:flex; flex-direction:column; gap:12px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                            <h2 class="section-title"><i class="ph ph-list-checks" style="color:var(--accent);"></i> Lembar Perhitungan Fisik</h2>
+                            <div style="position:relative; min-width:200px;">
+                                <i class="ph ph-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none;"></i>
+                                <input type="text" id="opn-search" placeholder="Cari item..." class="inp" style="padding-left:36px; padding-right:44px;" oninput="_debouncedFilterOpname()">
+                                <button type="button" class="btn-scan-inline" onclick="openScanner('opn-search')" title="Scan barcode item"><i class="ph ph-barcode"></i></button>
+                            </div>
+                        </div>
+                        <div id="opn-summary" style="display:flex; flex-wrap:wrap; gap:8px;">
+                            <span class="chip"><i class="ph ph-package"></i> Total Item <span class="n" id="opn-c-total">0</span></span>
+                            <span class="chip acc"><i class="ph ph-check-circle"></i> Sudah Dihitung <span class="n" id="opn-c-counted">0</span></span>
+                            <span class="chip pos"><i class="ph ph-arrow-up"></i> Selisih + <span class="n" id="opn-c-plus">0</span></span>
+                            <span class="chip neg"><i class="ph ph-arrow-down"></i> Selisih − <span class="n" id="opn-c-minus">0</span></span>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto; max-height:520px; overflow-y:auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:40px; text-align:center;">#</th>
+                                    <th>Nama Item</th>
+                                    <th>UOM</th>
+                                    <th style="text-align:right; color:var(--blue);">Stock Sistem</th>
+                                    <th style="text-align:right; color:var(--accent);">Stock Fisik</th>
+                                    <th style="text-align:right;">Selisih</th>
+                                    <th style="text-align:center;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="opname-tbody">
+                                <tr><td colspan="7" style="text-align:center; padding:44px; color:var(--text-dim); font-size:var(--fs-sm);">
+                                    Tekan <b>“Muat Stock Sistem”</b> untuk memulai perhitungan opname.
+                                </td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="padding:16px 20px; border-top:1px solid var(--border); background:var(--surface2); margin-top:auto; display:flex; flex-direction:column; gap:12px;">
+                        <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;">
+                            <div style="display:flex; flex-wrap:wrap; gap:10px;">
+                                <button onclick="saveOpnameDraftManual()" id="btn-save-draft" disabled class="btn-warn">
+                                    <i class="ph ph-floppy-disk"></i> Simpan Draft
+                                </button>
+                                <button onclick="deleteOpnameDraftUI()" id="btn-delete-draft" class="btn-danger-ghost" style="display:none;">
+                                    <i class="ph ph-trash"></i> Hapus Draft
+                                </button>
+                            </div>
+                            <span id="opn-draft-status" class="draft-status"></span>
+                        </div>
+                        <button onclick="processOpname()" id="btn-process-opname" disabled class="btn-save-big">
+                            <i class="ph ph-seal-check" style="font-size:1.2rem;"></i> Proses Stock Opname &amp; Buat Adjustment
+                        </button>
+                        <p style="font-size:var(--fs-xs); color:var(--text-dim); text-align:center; margin:0; font-weight:600;">
+                            <i class="ph ph-info"></i> Simpan Draft hanya menyimpan progress — adjustment baru dibuat saat proses final dijalankan.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB LAPORAN OPNAME -->
+        <div id="tab-laporan" class="tab-content">
+            <div class="card">
+                <div class="card-header no-print">
+                    <div style="display:flex; flex-direction:column; gap:14px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                            <div>
+                                <span class="eyebrow">Rekap &amp; Audit</span>
+                                <h2 class="section-title" style="margin-top:4px;">
+                                    <i class="ph ph-file-text" style="color:var(--accent); font-size:1.15rem;"></i> Laporan Stock Opname
+                                </h2>
+                                <p class="section-sub">Ringkasan adjustment persediaan per periode cut-off</p>
+                            </div>
+                            <div style="display:flex; gap:8px;">
+                                <button onclick="refreshOpnameReport()" class="btn-ghost" style="font-size:var(--fs-sm);">
+                                    <i class="ph ph-arrows-clockwise"></i> Refresh
+                                </button>
+                                <button onclick="window.print()" class="btn-primary" style="padding:9px 16px; font-size:var(--fs-sm);">
+                                    <i class="ph ph-printer"></i> Cetak / PDF
+                                </button>
+                            </div>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                            <div style="min-width:170px;">
+                                <select id="laporan-periode" class="inp" onchange="onLaporanPeriodeChange()" style="cursor:pointer;">
+                                    <option value="">Semua Periode</option>
+                                </select>
+                            </div>
+                            <div style="position:relative; flex:1; min-width:170px;">
+                                <i class="ph ph-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none;"></i>
+                                <input type="text" id="laporan-search" placeholder="Cari nama item..." class="inp" style="padding-left:36px; padding-right:44px;" oninput="_debouncedFilterReport()">
+                                <button type="button" class="btn-scan-inline" onclick="openScanner('laporan-search')" title="Scan barcode item"><i class="ph ph-barcode"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Print header (hanya muncul saat cetak) -->
+                <div class="print-only" style="padding:20px 20px 0;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #241d18; padding-bottom:10px;">
+                        <div>
+                            <div style="font-size:1.4rem; font-weight:800; letter-spacing:-0.02em;">Trans Cafe Gading</div>
+                            <div style="font-size:0.85rem; color:#555;">Laporan Stock Opname</div>
+                        </div>
+                        <div style="text-align:right; font-size:0.8rem; color:#555;">
+                            <div>Periode: <b id="print-periode">Semua</b></div>
+                            <div>Dicetak: <span id="print-date"></span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stat cards -->
+                <div style="padding:20px;">
+                    <div class="stat-grid" id="laporan-stats">
+                        <div class="stat-card pos"><div class="stat-label"><i class="ph ph-arrow-up"></i> Adjustment Masuk</div><div class="stat-value" id="stat-plus" style="color:var(--green);">0.00</div><div class="stat-hint"><span id="stat-plus-c">0</span> item ditambah</div></div>
+                        <div class="stat-card neg"><div class="stat-label"><i class="ph ph-arrow-down"></i> Adjustment Keluar</div><div class="stat-value" id="stat-minus" style="color:var(--red);">0.00</div><div class="stat-hint"><span id="stat-minus-c">0</span> item dikurang</div></div>
+                        <div class="stat-card net"><div class="stat-label"><i class="ph ph-scales"></i> Net Adjustment</div><div class="stat-value" id="stat-net" style="color:var(--blue);">0.00</div><div class="stat-hint">Selisih bersih</div></div>
+                        <div class="stat-card"><div class="stat-label"><i class="ph ph-list-numbers"></i> Item Diproses</div><div class="stat-value" id="stat-total">0</div><div class="stat-hint">Total baris opname</div></div>
+                        <div class="stat-card warn"><div class="stat-label"><i class="ph ph-target"></i> Akurasi Stock</div><div class="stat-value" id="stat-akurasi" style="color:var(--amber);">100%</div><div class="stat-hint"><span id="stat-sesuai-c">0</span> item sesuai</div></div>
+                    </div>
+                </div>
+
+                <div style="overflow-x:auto; max-height:560px; overflow-y:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Tanggal</th>
+                                <th>Nama Item</th>
+                                <th>UOM</th>
+                                <th style="text-align:right; color:var(--blue);">Sistem</th>
+                                <th style="text-align:right; color:var(--accent);">Fisik</th>
+                                <th style="text-align:right;">Selisih</th>
+                                <th style="text-align:center;">Jenis</th>
+                                <th>Petugas</th>
+                                <th>Catatan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="laporan-tbody">
+                            <tr><td colspan="9" style="text-align:center; padding:44px; color:var(--text-dim); font-size:var(--fs-sm);">Belum ada laporan opname.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- ===================== MODAL SCAN BARCODE ===================== -->
+    <div id="scan-modal" class="no-print">
+        <div class="scan-shell">
+            <div class="card-header" style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; background:linear-gradient(90deg, var(--surface) 0%, var(--surface2) 100%);">
+                <div>
+                    <span class="eyebrow">Scan Barcode Item</span>
+                    <div id="scan-target-label" style="font-size:var(--fs-h2); font-weight:800; color:var(--text); margin-top:3px;">&mdash;</div>
+                </div>
+                <button onclick="closeScanner()" title="Tutup" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:6px; border-radius:8px; font-size:1.3rem; line-height:1;"
+                    onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text-dim)'">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+
+            <div class="scan-stage" id="scan-stage">
+                <video id="scan-video" playsinline muted autoplay></video>
+                <div class="scan-frame"><div class="scan-laser"></div></div>
+                <div class="scan-cam-msg" id="scan-cam-msg"></div>
+                <div class="scan-tools">
+                    <select id="scan-camera" class="scan-select" style="display:none;" onchange="switchScanCamera(this.value)"></select>
+                    <button type="button" id="scan-torch" class="scan-torch" title="Senter" onclick="toggleScanTorch()"><i class="ph ph-flashlight"></i></button>
+                </div>
+            </div>
+
+            <div style="padding:16px; display:flex; flex-direction:column; gap:12px;">
+                <div id="scan-status" class="scan-status">
+                    <i class="ph ph-target"></i> <span>Arahkan barcode ke dalam bingkai&hellip;</span>
+                </div>
+                <div>
+                    <label class="lbl">Scanner Alat / Ketik Kode Manual</label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="scan-manual" class="inp" autocomplete="off" autocorrect="off" spellcheck="false"
+                            placeholder="Tembak barcode atau ketik kode, lalu Enter"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault();submitManualScan();}">
+                        <button type="button" class="btn-primary" style="padding:10px 16px;" onclick="submitManualScan()" title="Cari kode">
+                            <i class="ph ph-magnifying-glass" style="font-size:1.1rem;"></i>
+                        </button>
+                    </div>
+                    <p class="scan-hint">
+                        Scanner USB / Bluetooth (barcode gun) langsung bekerja &mdash; cukup ditembakkan selagi jendela ini terbuka.
+                    </p>
+                </div>
+            </div>
+
+            <div style="padding:12px 16px; border-top:1px solid var(--border); background:var(--surface2); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                <span id="scan-engine-note" class="scan-hint" style="margin:0;"></span>
+                <button onclick="closeScanner()" class="btn-ghost">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===================== GLOBAL STATE =====================
+        let masterItems      = [];
+        let tomSelectInstance = null;
+        let cartItems        = [];
+        let globalStockData  = [];
+        let globalInboundData  = [];
+        let globalOutboundData = [];
+        let opnameSnapshot   = [];   // [{namaItem, uom, altUom, sistem, fisik, catatan}]
+        let globalOpnameReport = [];
+        let opnameReportSummary = null;
+
+        // Draft Stock Opname
+        let opnameDraftId     = null;   // draft yang sedang dikerjakan
+        let opnameDraftStatus = null;   // 'DRAFT' | 'PROCESSED' | null
+        let pendingDraftInfo  = null;   // draft ditemukan di server, belum dilanjutkan
+        let _draftDirty       = false;  // ada perubahan yang belum tersimpan
+
+        const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+
+        // ===================== BOOSTER: CACHE & INDEX =====================
+        const _stripCache = new Map();       // cache hasil stripCode()
+        let _stockIndex   = new Map();       // namaItem -> row stock (O(1) lookup)
+        let _masterIndex  = new Map();       // namaItem -> row master (O(1) lookup)
+        let _sisaIndex    = new Map();       // namaItem -> saldo berjalan (untuk form Keluar)
+
+        function _buildStockIndex() {
+            _stockIndex = new Map();
+            for (const s of globalStockData) _stockIndex.set(s.namaItem, s);
+        }
+        function _buildMasterIndex() {
+            _masterIndex = new Map();
+            for (const m of masterItems) _masterIndex.set(m.namaItem, m);
+        }
+        // Saldo berjalan (`sisa`) nilainya IDENTIK baik dari kartu stock bulan
+        // berjalan maupun YTD, sehingga form Keluar bisa langsung akurat tanpa
+        // menunggu scan setahun penuh.
+        function _buildSisaIndex(rows) {
+            _sisaIndex = new Map();
+            for (const s of rows) _sisaIndex.set(s.namaItem, s._sisa);
+        }
+        function _mergeSisaIndex(rows) {
+            for (const s of rows) _sisaIndex.set(s.namaItem, s._sisa);
+        }
+
+        // BOOSTER: debounce untuk input pencarian (hindari render tiap ketukan tombol)
+        function _debounce(fn, delay) {
+            let t;
+            return function (...args) {
+                clearTimeout(t);
+                t = setTimeout(() => fn.apply(this, args), delay);
+            };
+        }
+
+        // BOOSTER: seluruh pencarian memakai pola debounce yang konsisten (280 ms)
+        const _debouncedFilterOutbound = _debounce(applyFilterOutbound, 280);
+        const _debouncedFilterInbound  = _debounce(applyFilterInbound, 280);
+        const _debouncedFilterStock    = _debounce(renderFilteredStock, 280);
+        const _debouncedFilterOpname   = _debounce(renderOpnameTable, 280);
+        const _debouncedFilterReport   = _debounce(renderOpnameReport, 280);
+        // Autosave draft opname: silent, ~1000 ms setelah user berhenti mengetik
+        const _autosaveDraft = _debounce(() => saveOpnameDraftToServer(true), 1000);
+
+        // ===================== REQUEST STATE & RACE GUARD =====================
+        // idle | loading | ready | error
+        const REQ = {
+            master: 'idle',
+            stockCurrent: 'idle',  stockFull: 'idle',
+            outboundCurrent: 'idle', outboundFull: 'idle',
+            inboundCurrent: 'idle',  inboundFull: 'idle',
+            opnamePeriod: 'idle',  opnameReport: 'idle',
+            opnameSnapshot: 'idle', opnameDraft: 'idle', draftSave: 'idle',
+            opnameFinal: 'idle', itemDetailLog: 'idle'
+        };
+        const _reqToken = {};
+        function _nextToken(key) { _reqToken[key] = (_reqToken[key] || 0) + 1; return _reqToken[key]; }
+        function _isStale(key, token) { return _reqToken[key] !== token; }
+
+        /**
+         * Satu pintu untuk semua google.script.run.
+         *  - Duplicate request dicegah: key yang sedang 'loading' tidak dijalankan lagi.
+         *  - opt.replace = true untuk query berparameter (rentang tanggal, periode,
+         *    item): request baru TETAP dikirim, respons lama yang keburu datang
+         *    dibuang oleh token guard. Tanpa ini, mengganti filter saat request
+         *    masih berjalan akan membuat UI diam saja.
+         *  - Race condition dicegah: respons dengan token lama diabaikan.
+         *  - Loader full-screen HANYA bila opt.blocking === true.
+         *  - opt.onSettled dipanggil TEPAT SEKALI per pemanggilan (termasuk saat
+         *    respons dibuang), sehingga rantai background hydration tidak macet.
+         * @return {boolean} true bila request benar-benar dikirim.
+         */
+        function serverCall(opt) {
+            const key = opt.key || null;
+            if (key && REQ[key] === 'loading' && !opt.replace) return false;   // dedupe
+
+            const token = key ? _nextToken(key) : 0;
+            if (key) REQ[key] = 'loading';
+
+            const blocking = !!opt.blocking;
+            const quiet    = !!opt.quiet;                       // tanpa indikator sama sekali
+            if (blocking) showLoader(true);
+            else if (!quiet) syncBegin();
+
+            const finish = (ok) => {
+                if (blocking) showLoader(false);
+                else if (!quiet) syncEnd(ok);
+            };
+
+            const settle = (ok) => { if (opt.onSettled) { try { opt.onSettled(ok); } catch (e) { console.error(e); } } };
+
+            const runner = google.script.run
+                .withSuccessHandler(res => {
+                    const ok = !!(res && res.success);
+                    finish(ok);
+                    if (key && _isStale(key, token)) { settle(ok); return; }   // respons usang -> abaikan hasilnya
+                    if (key) REQ[key] = ok ? 'ready' : 'error';
+                    try {
+                        if (ok) { if (opt.onSuccess) opt.onSuccess(res); }
+                        else {
+                            const msg = (res && res.message) || 'Terjadi kesalahan pada server.';
+                            if (opt.onError) opt.onError(msg);
+                            else if (opt.alertOnError) showAlert('Gagal', msg, 'error');
+                        }
+                    } catch (e) { console.error(e); }
+                    settle(ok);
+                })
+                .withFailureHandler(() => {
+                    finish(false);
+                    if (key && _isStale(key, token)) { settle(false); return; }
+                    if (key) REQ[key] = 'error';
+                    try {
+                        if (opt.onError) opt.onError('Koneksi server gagal.');
+                        else if (opt.alertOnError) showAlert('Error', 'Koneksi Server Gagal', 'error');
+                    } catch (e) { console.error(e); }
+                    settle(false);
+                });
+
+            runner[opt.fn].apply(runner, opt.args || []);
+            return true;
+        }
+
+        // ===================== INDIKATOR SINKRONISASI (NON-BLOCKING) =====================
+        let _syncActive = 0, _syncFailed = false, _syncHideTimer = null;
+
+        function syncBegin() { _syncActive++; renderSyncPill(); }
+        function syncEnd(ok) {
+            _syncActive = Math.max(0, _syncActive - 1);
+            if (!ok) _syncFailed = true;
+            renderSyncPill();
+        }
+        function renderSyncPill() {
+            const pill = document.getElementById('sync-pill');
+            const txt  = document.getElementById('sync-pill-text');
+            if (!pill || !txt) return;
+            clearTimeout(_syncHideTimer);
+            pill.classList.add('show');
+
+            if (_syncActive > 0) {
+                pill.className = 'show syncing';
+                txt.textContent = 'Menyinkronkan…';
+                return;
+            }
+            if (_syncFailed) {
+                pill.className = 'show warn';
+                txt.textContent = 'Sebagian data gagal dimuat';
+                _syncHideTimer = setTimeout(() => { _syncFailed = false; pill.classList.remove('show'); }, 6000);
+                return;
+            }
+            pill.className = 'show ok';
+            txt.textContent = 'Data terbaru';
+            _syncHideTimer = setTimeout(() => pill.classList.remove('show'), 2500);
+        }
+
+        /** Jalankan pekerjaan latar saat browser idle; fallback setTimeout(...,0). */
+        function scheduleIdle(fn, timeout) {
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(() => fn(), { timeout: timeout || 2000 });
+            } else {
+                setTimeout(fn, 0);
+            }
+        }
+
+        function isTabActive(tabId) {
+            const el = document.getElementById(tabId);
+            return !!(el && el.classList.contains('active'));
+        }
+
+        // ===================== HELPERS =====================
+
+        function getJakartaDate() {
+            return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
+        }
+
+        // BOOSTER: getJakartaDate() cukup mahal (round-trip toLocaleString) dan
+        // sebelumnya dipanggil SEKALI PER BARIS saat render Data Masuk.
+        // Nilainya di-cache 60 detik — akurasinya lebih dari cukup untuk
+        // menghitung selisih hari expired date.
+        let _todayJktTs = 0, _todayJktAt = 0;
+        function todayJakartaStart() {
+            const now = Date.now();
+            if (!_todayJktTs || (now - _todayJktAt) > 60000) {
+                const d = getJakartaDate();
+                d.setHours(0, 0, 0, 0);
+                _todayJktTs = d.getTime();
+                _todayJktAt = now;
+            }
+            return _todayJktTs;
+        }
+
+        // BOOSTER: satu kali parsing per nilai unik, dipakai bersama oleh
+        // formatExpDate() dan getExpDateStyle() (dulu masing-masing parsing sendiri).
+        const _dateParseCache = new Map();
+        function parseLooseDate(val) {
+            const key = String(val);
+            if (_dateParseCache.has(key)) return _dateParseCache.get(key);
+            let d = new Date(val);
+            if (isNaN(d.getTime())) {
+                const parts = key.split(/[\/\-\.]/);
+                if (parts.length === 3) {
+                    d = parts[0].length === 4
+                        ? new Date(parts[0], parts[1]-1, parts[2])
+                        : new Date(parts[2], parts[1]-1, parts[0]);
+                }
+            }
+            let out = null;
+            if (!isNaN(d.getTime())) {
+                const dayStart = new Date(d.getTime());
+                dayStart.setHours(0, 0, 0, 0);
+                out = { y: d.getFullYear(), m: d.getMonth(), d: d.getDate(), dayTs: dayStart.getTime() };
+            }
+            _dateParseCache.set(key, out);
+            return out;
+        }
+
+        function stripCode(name) {
+            if (!name) return '';
+            const key = name.toString();
+            if (_stripCache.has(key)) return _stripCache.get(key);
+            const result = key.replace(/^\[[^\]]*\]\s*/, '').trim();
+            _stripCache.set(key, result);
+            return result;
+        }
+
+        function fmtNum(v) {
+            const n = parseFloat(v);
+            return isNaN(n) ? '0.00' : n.toFixed(2);
+        }
+
+        function formatExpDate(val) {
+            if (!val || val === '—') return '—';
+            if (typeof val === 'string' && /[a-zA-Z]/.test(val)) return val;
+            const p = parseLooseDate(val);
+            if (!p) return val.toString();
+            return `${p.d} ${BULAN[p.m]} ${p.y}`;
+        }
+
+        function getExpDateStyle(expDateStr) {
+            if (!expDateStr || expDateStr === '—') return '';
+            const p = parseLooseDate(expDateStr);
+            if (!p) return '';
+            const diffDays = Math.ceil((p.dayTs - todayJakartaStart()) / 86400000);
+
+            if (diffDays < 0)  return 'color:var(--red);font-weight:700;background:var(--red-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(220,38,38,0.2);display:inline-block;font-size:0.75rem;';
+            if (diffDays <= 7) return 'color:var(--amber);font-weight:700;background:var(--amber-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(180,83,9,0.2);display:inline-block;font-size:0.75rem;';
+            return 'color:var(--green);font-weight:700;background:var(--green-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(21,128,61,0.2);display:inline-block;font-size:0.75rem;';
+        }
+
+        function isItemActive(item) {
+            if (!item || typeof item !== 'object') return false;
+
+            const POSSIBLE_KEYS = [
+                'status','Status','STATUS',
+                'aktif','Aktif','AKTIF',
+                'aktiv','Aktiv','AKTIV',
+                'active','Active','ACTIVE',
+                'statusitem','StatusItem','STATUSITEM',
+                'status_item','Status_Item','STATUS_ITEM',
+                'isactive','IsActive','ISACTIVE'
+            ];
+
+            let rawVal = undefined;
+
+            for (const k of POSSIBLE_KEYS) {
+                if (Object.prototype.hasOwnProperty.call(item, k)) {
+                    rawVal = item[k];
+                    break;
+                }
+            }
+
+            if (rawVal === undefined) {
+                for (const k in item) {
+                    if (!Object.prototype.hasOwnProperty.call(item, k)) continue;
+                    const norm = k.toLowerCase().replace(/[_\-\s]/g, '');
+                    if (['status','aktif','aktiv','active','statusitem','statusaktif'].includes(norm)) {
+                        rawVal = item[k];
+                        break;
+                    }
+                }
+            }
+
+            if (rawVal === undefined || rawVal === null) return false;
+
+            const cleaned = rawVal.toString().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+            return new Set(['AKTIV','AKTIF','ACTIVE']).has(cleaned);
+        }
+
+        // ===================== INIT · LIFECYCLE =====================
+        //
+        //  OPEN
+        //   -> RENDER UI SHELL      (tanpa request server sama sekali)
+        //   -> SET TODAY
+        //   -> LOAD MASTER CACHE    ┐ paralel, non-blocking
+        //   -> LOAD CURRENT STOCK   ┘
+        //   -> LOAD CURRENT OUTBOUND
+        //   -> USER READY
+        //   -> BACKGROUND HYDRATION (idle)
+        //
+        // Tidak ada satupun loader full-screen pada jalur ini.
+
+        document.addEventListener("DOMContentLoaded", () => {
+            renderUiShell();      // 1. shell + tanggal, langsung bisa dilihat user
+            startCriticalPath();  // 2. data minimum agar form Keluar bisa dipakai
+        });
+
+        function renderUiShell() {
+            const jkt = getJakartaDate();
+            const y = jkt.getFullYear();
+            const m = String(jkt.getMonth() + 1).padStart(2, '0');
+            const d = String(jkt.getDate()).padStart(2, '0');
+            const today     = `${y}-${m}-${d}`;
+            const startMonth = `${y}-${m}-01`;
+            const startYear  = `${y}-01-01`;
+
+            document.getElementById('out-tanggal').value      = today;
+            document.getElementById('filter-out-start').value = startMonth;
+            document.getElementById('filter-out-end').value   = today;
+            document.getElementById('filter-in-start').value  = startMonth;
+            document.getElementById('filter-in-end').value    = today;
+            document.getElementById('filter-start').value     = startYear;
+            document.getElementById('filter-end').value       = today;
+            document.getElementById('opn-tanggal').value      = today;
+            syncOpnamePeriode();
+
+            // Dropdown dirender kosong lebih dulu agar kontrol sudah tampil rapi
+            // sebelum master data tiba (shell dulu, data menyusul).
+            initDropdown([], 'Memuat item…');
+            renderCart();
+        }
+
+        function startCriticalPath() {
+            let pending = 2, advanced = false;
+            const advance = () => {
+                if (advanced) return;
+                pending--;
+                if (pending > 0) return;
+                advanced = true;
+                // PRIORITAS 3: transaksi keluar bulan berjalan.
+                loadCurrentOutbound({ onSettled: () => scheduleIdle(runBackgroundHydration, 1500) });
+            };
+            // PRIORITAS 1 & 2 berjalan paralel: master + stock bulan berjalan.
+            if (!loadMasterData({ onSettled: advance })) advance();
+            if (!loadCurrentStock({ onSettled: advance })) advance();
+        }
+
+        /**
+         * BACKGROUND HYDRATION.
+         * Berjalan berurutan agar tidak membanjiri Apps Script, setiap langkah
+         * dijadwalkan saat browser idle. Kegagalan satu langkah TIDAK
+         * menghentikan langkah lain dan TIDAK merusak modul Input Keluar.
+         */
+        function runBackgroundHydration() {
+            const steps = [
+                (next) => loadCurrentInbound({ onSettled: next }),                 // 4. inbound bulan berjalan
+                (next) => loadCurrentStock({ force: true, onSettled: next }),      // revalidate (stale-while-revalidate)
+                (next) => loadOutboundData({ background: true, onSettled: next }), // 5. full outbound
+                (next) => loadInboundData({ background: true, onSettled: next }),  // 6. full inbound
+                (next) => loadFullStock({ background: true, onSettled: next }),    // 7. full stock (YTD)
+                (next) => loadOpnamePeriods({ onSettled: next }),                  // 8. periode opname
+                (next) => checkOpnameDraft({ onSettled: next }),                   // draft opname (kecil)
+                (next) => loadOpnameReport({ background: true, onSettled: next })  // 9. laporan opname
+            ];
+
+            let i = 0;
+            const runStep = () => {
+                if (i >= steps.length) return;
+                const step = steps[i++];
+                let advanced = false;
+                const once = () => { if (advanced) return; advanced = true; runStep(); };
+                scheduleIdle(() => {
+                    let started = false;
+                    try { started = step(once); } catch (e) { console.error(e); }
+                    if (started === false) once();   // request di-skip -> lanjut langkah berikutnya
+                });
+            };
+            runStep();
+        }
+
+        // ===================== UI HELPERS =====================
+
+        function showLoader(show) {
+            document.getElementById('loader').classList.toggle('show', show);
+        }
+
+        function showAlert(title, text, icon) {
+            Swal.fire({ title, text, icon, confirmButtonColor: 'var(--accent)', background: 'var(--surface)', color: 'var(--text)' });
+        }
+
+        /** Sudah ada data / sedang jalan / sudah pernah sukses? -> jangan request lagi. */
+        function _needsFetch(stateKeys) {
+            for (const k of stateKeys) {
+                if (REQ[k] === 'loading' || REQ[k] === 'ready') return false;
+            }
+            return true;
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.getElementById('btn-' + tabId).classList.add('active');
+
+            // Selalu render dari data yang SUDAH ada dulu (instan), request hanya
+            // dilakukan bila memang belum ada data dan tidak ada request berjalan.
+            if (tabId === 'tab-masuk') {
+                if (globalInboundData.length) applyFilterInbound();
+                if (!globalInboundData.length && _needsFetch(['inboundCurrent', 'inboundFull'])) loadCurrentInbound();
+            }
+            if (tabId === 'tab-riwayat-keluar') {
+                if (globalOutboundData.length) applyFilterOutbound();
+                if (!globalOutboundData.length && _needsFetch(['outboundCurrent', 'outboundFull'])) loadCurrentOutbound();
+            }
+            if (tabId === 'tab-stock') {
+                if (globalStockData.length) renderFilteredStock();
+                if (!globalStockData.length && _needsFetch(['stockCurrent', 'stockFull'])) loadCurrentStock();
+            }
+            if (tabId === 'tab-opname') {
+                renderDraftBanner();
+                if (_needsFetch(['opnameDraft'])) checkOpnameDraft();
+            }
+            if (tabId === 'tab-laporan') {
+                // Dulu: dua request setiap kali tab dibuka. Sekarang hanya bila perlu.
+                if (_needsFetch(['opnamePeriod'])) loadOpnamePeriods();
+                if (globalOpnameReport.length) renderOpnameReport();
+                else if (_needsFetch(['opnameReport'])) loadOpnameReport();
+            }
+        }
+
+        function toggleGroup(cls, iconId) {
+            const rows = document.querySelectorAll('.' + cls);
+            const icon = document.getElementById(iconId);
+            let anyHidden = false;
+            rows.forEach(r => { if (r.classList.contains('hidden')) anyHidden = true; });
+            rows.forEach(r => anyHidden ? r.classList.remove('hidden') : r.classList.add('hidden'));
+            if (icon) icon.style.transform = anyHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+
+        // ===================== MASTER DATA =====================
+
+        /**
+         * PRIORITAS 1 — Master item (dilayani CacheService MASTER_DATA_V3).
+         * Non-blocking: shell sudah tampil, dropdown terisi begitu data tiba.
+         */
+        function loadMasterData(opt) {
+            opt = opt || {};
+            return serverCall({
+                key: 'master',
+                fn: 'getMasterData',
+                onSuccess: res => {
+                    masterItems = res.data || [];
+                    _buildMasterIndex();   // BOOSTER
+                    initDropdown(masterItems);
+                },
+                onError: msg => {
+                    initDropdown([], 'Gagal memuat item — muat ulang halaman');
+                    showAlert('Error', 'Gagal memuat data Master: ' + msg, 'error');
+                },
+                onSettled: opt.onSettled
+            });
+        }
+
+        // Nama lama dipertahankan agar pemanggilan/kebiasaan lama tetap bekerja.
+        function fetchMasterData() { return loadMasterData(); }
+
+        function initDropdown(items, placeholderText) {
+            const selectEl = document.getElementById('out-item');
+
+            const options = (items || [])
+                .filter(item => {
+                    if (!item.namaItem || item.namaItem.toString().trim() === '') return false;
+                    return isItemActive(item);
+                })
+                .map(item => ({
+                    value:  item.namaItem,
+                    text:   stripCode(item.namaItem),
+                    uom:    item.uom    || '',
+                    altUom: item.altUom || ''
+                }));
+
+            if (tomSelectInstance) { tomSelectInstance.destroy(); tomSelectInstance = null; }
+
+            tomSelectInstance = new TomSelect(selectEl, {
+                options,
+                maxItems: 1,
+                searchField: ['text'],
+                placeholder: placeholderText || 'Ketik nama item...',
+                create: false,
+                render: {
+                    option: (data, escape) => `<div>${escape(data.text)}</div>`,
+                    item:   (data, escape) => `<div>${escape(data.text)}</div>`
+                },
+                onChange(value) {
+                    if (!value) {
+                        document.getElementById('out-altuom').value    = '';
+                        document.getElementById('out-uom').value       = '';
+                        document.getElementById('out-sisa-stock').value = '';
+                        return;
+                    }
+                    const found = _masterIndex.get(value); // BOOSTER: O(1)
+                    document.getElementById('out-altuom').value = found ? (found.altUom || '') : '';
+                    document.getElementById('out-uom').value    = found ? (found.uom     || '') : '';
+                    updateSelectedSisaStock();
+                    if (found) document.getElementById('out-qty').focus();
+                }
+            });
+        }
+
+        // ===================== FORM KELUAR LOGIC =====================
+
+        /**
+         * Normalisasi baris kartu stock: angka & kunci pencarian dihitung SEKALI
+         * di sini, bukan berulang setiap render/keystroke.
+         * Formula `sisa` dipertahankan persis seperti versi sebelumnya.
+         */
+        function normalizeStockRows(rows) {
+            const out = [];
+            for (const r of (rows || [])) {
+                if (!r.namaItem || r.namaItem.toString().trim() === '') continue;
+                const stockAwal  = parseFloat(r.stockAwal) || 0;
+                const masukBiasa = parseFloat(r.masukBiasa !== undefined ? r.masukBiasa : (r.masuk || 0));
+                const keluar     = parseFloat(r.keluar) || 0;
+                r._awal   = stockAwal;
+                r._masuk  = masukBiasa;
+                r._keluar = keluar;
+                r._sisa   = parseFloat(r.sisa) || (stockAwal + masukBiasa - keluar);
+                r._label  = stripCode(r.namaItem);
+                r._search = r._label.toLowerCase();
+                out.push(r);
+            }
+            return out;
+        }
+
+        function setStockScopeNote(show) {
+            const el = document.getElementById('stock-scope-note');
+            if (el) el.classList.toggle('show', !!show);
+        }
+
+        /**
+         * PRIORITAS 2 — kartu stock bulan berjalan.
+         * Inilah sumber "Sisa Stock" pada form Keluar. Saldo `sisa` identik
+         * dengan versi YTD sehingga akurat walau data setahun belum dimuat.
+         */
+        function loadCurrentStock(opt) {
+            opt = opt || {};
+            return serverCall({
+                key: 'stockCurrent',
+                fn: 'getCurrentMonthStockCard',
+                args: [!!opt.force],
+                onSuccess: res => {
+                    const rows = normalizeStockRows(res.data);
+                    _buildSisaIndex(rows);
+                    updateSelectedSisaStock();
+                    // Selama data penuh belum tiba, tab Kartu Stock tetap berguna.
+                    if (REQ.stockFull !== 'ready') {
+                        globalStockData = rows;
+                        _buildStockIndex();   // BOOSTER
+                        setStockScopeNote(true);
+                        if (isTabActive('tab-stock')) renderFilteredStock();
+                    }
+                },
+                onSettled: opt.onSettled
+            });
+        }
+
+        /** Kartu stock sesuai rentang filter (default 1 Januari s/d hari ini). */
+        function loadFullStock(opt) {
+            opt = opt || {};
+            const startDate = document.getElementById('filter-start').value;
+            const endDate   = document.getElementById('filter-end').value;
+            return serverCall({
+                key: 'stockFull',
+                fn: 'getStockCardData',
+                args: [startDate, endDate],
+                replace: !!opt.userInitiated,   // ganti rentang tanggal saat loading tetap dilayani
+                onSuccess: res => {
+                    globalStockData = normalizeStockRows(res.data);
+                    _buildStockIndex();     // BOOSTER
+                    _mergeSisaIndex(globalStockData);
+                    updateSelectedSisaStock();
+                    setStockScopeNote(false);
+                    if (isTabActive('tab-stock')) renderFilteredStock();
+                },
+                onError: msg => {
+                    if (opt.userInitiated) showAlert('Gagal', msg, 'error');
+                },
+                onSettled: opt.onSettled
+            });
+        }
+
+        /** Tombol "Ambil Periode" — tetap non-blocking, cukup indikator kecil. */
+        function loadStockData() {
+            const started = loadFullStock({ userInitiated: true });
+            if (started) {
+                const tbody = document.getElementById('stock-tbody');
+                if (tbody && !globalStockData.length) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Memuat kartu stock…</td></tr>';
+                }
+            }
+            return started;
+        }
+
+        /** Nama lama dipertahankan: refresh saldo setelah transaksi tersimpan. */
+        function silentlyLoadStockBalances() {
+            return loadCurrentStock({ force: true });
+        }
+
+        function updateSelectedSisaStock() {
+            const value    = document.getElementById('out-item').value;
+            const sisaInput = document.getElementById('out-sisa-stock');
+            if (!sisaInput) return;
+            if (!value) { sisaInput.value = ''; return; }
+
+            // Saldo berjalan diambil dari index khusus (O(1)); bila belum ada,
+            // fallback ke _stockIndex seperti perilaku sebelumnya.
+            let sisa = _sisaIndex.get(value);
+            if (sisa === undefined) {
+                const foundStock = _stockIndex.get(value); // BOOSTER: O(1)
+                if (foundStock) {
+                    sisa = (foundStock._sisa !== undefined)
+                        ? foundStock._sisa
+                        : (parseFloat(foundStock.sisa) || 0);
+                }
+            }
+
+            if (sisa !== undefined) {
+                sisaInput.value      = sisa.toFixed(2);
+                sisaInput.style.color = sisa < 0 ? 'var(--red)' : 'var(--blue)';
+            } else {
+                sisaInput.value      = '0.00';
+                sisaInput.style.color = 'var(--text-dim)';
+            }
+        }
+
+        function addItemToCart() {
+            const namaItem = document.getElementById('out-item').value;
+            const altUom   = document.getElementById('out-altuom').value;
+            const uom      = document.getElementById('out-uom').value;
+            const qty      = document.getElementById('out-qty').value;
+
+            if (!namaItem)                    return showAlert('Perhatian', 'Pilih Item terlebih dahulu!', 'warning');
+            if (!qty || parseFloat(qty) <= 0) return showAlert('Perhatian', 'Masukkan QTY yang valid!', 'warning');
+
+            const idx = cartItems.findIndex(i => i.namaItem === namaItem);
+            if (idx > -1) {
+                cartItems[idx].qty = (parseFloat(cartItems[idx].qty) + parseFloat(qty)).toFixed(2);
+            } else {
+                cartItems.push({ namaItem, altUom, uom, qty: parseFloat(qty).toFixed(2) });
+            }
+
+            tomSelectInstance.clear();
+            document.getElementById('out-qty').value = '';
+            document.getElementById('out-sisa-stock').value = '';
+            renderCart();
+        }
+
+        function removeCartItem(index) { cartItems.splice(index, 1); renderCart(); }
+
+        function renderCart() {
+            const tbody   = document.getElementById('cart-tbody');
+            const btnSave = document.getElementById('btn-save-outbound');
+            const badge   = document.getElementById('cart-count');
+
+            badge.textContent = cartItems.length + ' Item';
+            tbody.innerHTML   = '';
+
+            if (!cartItems.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Belum ada item ditambahkan</td></tr>';
+                btnSave.disabled = true;
+                return;
+            }
+
+            btnSave.disabled = false;
+            const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
+            cartItems.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="font-weight:700; color:var(--text);">${stripCode(item.namaItem)}</td>
+                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${item.altUom}</td>
+                    <td style="text-align:right; font-weight:800; color:var(--red); font-size:0.95rem;">${item.qty}</td>
+                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${item.uom}</td>
+                    <td style="text-align:center;">
+                        <button onclick="removeCartItem(${idx})" style="background:var(--red-soft); border:1px solid rgba(220,38,38,0.25); color:var(--red); border-radius:8px; padding:6px 9px; cursor:pointer;" title="Hapus">
+                            <i class="ph ph-trash" style="font-size:1.05rem;"></i>
+                        </button>
+                    </td>`;
+                frag.appendChild(tr);
+            });
+            tbody.appendChild(frag);   // BOOSTER: satu kali insert
+        }
+
+        function saveOutbound() {
+            const tanggal = document.getElementById('out-tanggal').value;
+            if (!tanggal)          return showAlert('Perhatian', 'Tanggal Transaksi harus diisi!', 'warning');
+            if (!cartItems.length) return;
+
+            Swal.fire({
+                title: 'Simpan Data?',
+                text: `Menyimpan ${cartItems.length} item ke Sheet KELUAR.`,
+                icon: 'question', showCancelButton: true,
+                confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
+                confirmButtonText: 'Ya, Simpan', cancelButtonText: 'Batal',
+                background: 'var(--surface)', color: 'var(--text)'
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                // Blocking loader DIPERTAHANKAN: ini operasi tulis yang harus ditunggu.
+                serverCall({
+                    fn: 'saveOutboundData',
+                    args: [{ tanggal, items: cartItems }],
+                    blocking: true,
+                    alertOnError: true,
+                    onSuccess: res => {
+                        Swal.fire({ title: 'Tersimpan!', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
+                        cartItems = []; renderCart();
+                        invalidateOutboundClient();      // SCOPED: outbound + stock saja
+                        silentlyLoadStockBalances();     // saldo langsung disegarkan
+                    }
+                });
+            });
+        }
+
+        /**
+         * Invalidasi sisi klien yang TER-SCOPE.
+         * Save/Edit Keluar hanya menyentuh Outbound + Stock — master, inbound,
+         * dan laporan opname tidak ikut dibuang.
+         */
+        function invalidateOutboundClient() {
+            globalOutboundData = [];
+            globalStockData = [];
+            _stockIndex = new Map();
+            REQ.outboundCurrent = 'idle';
+            REQ.outboundFull    = 'idle';
+            REQ.stockCurrent    = 'idle';
+            REQ.stockFull       = 'idle';
+            setStockScopeNote(false);
+        }
+
+        /** Edit Exp Date hanya membatalkan cache Inbound (QTY tidak berubah). */
+        function invalidateInboundClient() {
+            globalInboundData = [];
+            REQ.inboundCurrent = 'idle';
+            REQ.inboundFull    = 'idle';
+        }
+
+        // ===================== GROUPED TABLE RENDERER =====================
+
+        function isAdjRow(row) {
+            return (row.id && row.id.toString().indexOf('ADJ-') === 0) ||
+                   (row.status && row.status.toString().toUpperCase().indexOf('ADJUSTMENT') > -1);
+        }
+
+        /** Kunci urut/cari yang sudah dipre-compute saat data masuk. */
+        function _rowKey(r) {
+            return (r._search !== undefined) ? r._search : stripCode(r.namaItem).toLowerCase();
+        }
+        function _rowLabel(r) {
+            return (r._label !== undefined) ? r._label : stripCode(r.namaItem);
+        }
+
+        /**
+         * Normalisasi baris transaksi (inbound/outbound):
+         * `_day` (tanggal awal hari) dan `_search` dihitung SEKALI di sini.
+         * Sebelumnya keduanya dihitung ulang untuk setiap baris pada setiap
+         * ketukan tombol pencarian.
+         */
+        function normalizeTrxRows(rows) {
+            const out = [];
+            for (const r of (rows || [])) {
+                if (!r.namaItem || r.namaItem.toString().trim() === '') continue;
+                r._day    = new Date(r.rawDate).setHours(0, 0, 0, 0);
+                r._label  = stripCode(r.namaItem);
+                r._search = r._label.toLowerCase();
+                out.push(r);
+            }
+            return out;
+        }
+
+        function renderGroupedTable(data, tbodyId, type) {
+            const tbody = document.getElementById(tbodyId);
+
+            const isOut = type === 'outbound';
+            const isIn  = type === 'inbound';
+            const cols = isOut ? 6 : (isIn ? 8 : 6);
+
+            if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="${cols}" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Tidak ada data.</td></tr>`;
+                return;
+            }
+
+            data.sort((a, b) => {
+                if (b.rawDate !== a.rawDate) return b.rawDate - a.rawDate;
+                return _rowKey(a).localeCompare(_rowKey(b));   // BOOSTER: tanpa stripCode berulang
+            });
+            let currentGroup = '', groupId = 0;
+            const frag = document.createDocumentFragment(); // BOOSTER: batch DOM insert
+
+            data.forEach(row => {
+                if (row.tanggalGroup !== currentGroup) {
+                    currentGroup = row.tanggalGroup; groupId++;
+                    const gtr = document.createElement('tr');
+                    gtr.className = 'group-hdr';
+                    gtr.innerHTML = `<td colspan="${cols}"><div class="group-hdr-inner" onclick="toggleGroup('grp-${type}-${groupId}','icon-${type}-${groupId}')">
+                        <span style="font-size:0.825rem; font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px;">
+                            <i class="ph ph-calendar-blank" style="font-size:1.15rem;"></i> ${currentGroup}
+                        </span>
+                        <i id="icon-${type}-${groupId}" class="ph ph-caret-down" style="color:var(--text-dim); font-size:1.1rem; transition:transform 0.25s;"></i>
+                    </div></td>`;
+                    frag.appendChild(gtr); // BOOSTER
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = `grp-${type}-${groupId} hidden`;
+                const adjBadge = isAdjRow(row) ? ` <span class="badge badge-adj" style="padding:1px 7px;">ADJ</span>` : '';
+
+                const qtyTd = isOut
+                    ? `<td style="text-align:right; font-weight:800; color:var(--red); font-size:0.925rem;">${parseFloat(row.qty)>0?'-':''}${parseFloat(row.qty).toFixed(2)}</td>`
+                    : `<td style="text-align:right; font-weight:800; color:var(--green); font-size:0.925rem;">${parseFloat(row.qty)>0?'+':''}${parseFloat(row.qty).toFixed(2)}</td>`;
+
+                let actionTd = '';
+                if (isOut) {
+                    const idParam = Array.isArray(row.ids) ? JSON.stringify(row.ids).replace(/"/g, '&quot;') : row.id;
+                    actionTd = `<td style="text-align:center;"><button onclick="editOutboundItem('${idParam}','${row.tanggalEdit}','${row.qty}')"
+                        style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 9px; cursor:pointer;">
+                        <i class="ph ph-pencil-simple" style="font-size:1.05rem;"></i></button></td>`;
+                } else if (isIn) {
+                    actionTd = `<td style="text-align:center;"><button onclick="editInboundExpDate('${row.id}','${row.expDate||''}')"
+                        style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 9px; cursor:pointer;">
+                        <i class="ph ph-calendar-plus" style="font-size:1.05rem;"></i></button></td>`;
+                }
+
+                if (isIn) {
+                    const rawExp    = row.expDate || row.exp_date || row.expired || row.ket || row.keterangan || '';
+                    const expDateVal = formatExpDate(rawExp);
+                    const expStyle   = getExpDateStyle(rawExp);
+                    tr.innerHTML = `
+                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.tanggal}</td>
+                        <td class="mono">${row.id||'—'}</td>
+                        <td style="font-weight:700; color:var(--text);">${_rowLabel(row)}${adjBadge}</td>
+                        <td><span style="${expStyle}">${expDateVal}</span></td>
+                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.altUom}</td>
+                        ${qtyTd}
+                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.uom}</td>
+                        ${actionTd}`;
+                } else {
+                    tr.innerHTML = `
+                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.tanggal}</td>
+                        <td style="font-weight:700; color:var(--text);">${_rowLabel(row)}${adjBadge}</td>
+                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.altUom}</td>
+                        ${qtyTd}
+                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.uom}</td>
+                        ${actionTd}`;
+                }
+                frag.appendChild(tr); // BOOSTER
+            });
+            tbody.innerHTML = '';       // BOOSTER: satu kali clear
+            tbody.appendChild(frag);    // BOOSTER: satu kali insert
+        }
+
+        // ===================== DATA MASUK =====================
+
+        /** PRIORITAS 4 — data masuk bulan berjalan (rentang default tab ini). */
+        function loadCurrentInbound(opt) {
+            opt = opt || {};
+            return serverCall({
+                key: 'inboundCurrent',
+                fn: 'getCurrentMonthInboundData',
+                args: [!!opt.force],
+                onSuccess: res => {
+                    if (REQ.inboundFull === 'ready') return;   // data penuh lebih lengkap
+                    globalInboundData = normalizeTrxRows(res.data);
+                    if (isTabActive('tab-masuk')) applyFilterInbound();
+                },
+                onSettled: opt.onSettled
+            });
+        }
+
+        /** Seluruh histori masuk — tombol Refresh & background hydration. */
+        function loadInboundData(opt) {
+            opt = opt || {};
+            return serverCall({
+                key: 'inboundFull',
+                fn: 'getInboundData',
+                onSuccess: res => {
+                    globalInboundData = normalizeTrxRows(res.data);
+                    if (isTabActive('tab-masuk')) applyFilterInbound();
+                },
+                onError: msg => { if (!opt.background) showAlert('Gagal', msg, 'error'); },
+                onSettled: opt.onSettled
+            });
+        }
+
+        function applyFilterInbound() {
+            const startVal = document.getElementById('filter-in-start').value;
+            const endVal   = document.getElementById('filter-in-end').value;
+            const keyword  = document.getElementById('filter-in-name').value.toLowerCase();
+            const start = startVal ? new Date(startVal).setHours(0,0,0,0) : 0;
+            const end   = endVal   ? new Date(endVal).setHours(23,59,59,999) : Infinity;
+            // BOOSTER: _day & _search sudah dipre-compute (tanpa parsing ulang).
+            const filtered = globalInboundData.filter(row =>
+                row._day >= start && row._day <= end && row._search.includes(keyword)
+            );
+            renderGroupedTable(filtered, 'inbound-tbody', 'inbound');
+        }
+
+        function editInboundExpDate(id, currentExpDate) {
+            let defaultDate = '';
+            if (currentExpDate && currentExpDate !== '—') {
+                if (/^\d{4}-\d{2}-\d{2}$/.test(currentExpDate)) {
+                    defaultDate = currentExpDate;
+                } else {
+                    const d = new Date(currentExpDate);
+                    if (!isNaN(d.getTime())) {
+                        defaultDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                    }
+                }
+            }
+            Swal.fire({
+                title: 'Edit Expired Date',
+                html: `<div style="text-align:left; margin-bottom:12px;">
+                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Tanggal Expire Baru</label>
+                    <input type="date" id="swal-input-exp" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${defaultDate}">
+                </div>`,
+                showCancelButton: true, confirmButtonText: 'Simpan', cancelButtonText: 'Batal',
+                confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
+                background: 'var(--surface)', color: 'var(--text)',
+                preConfirm: () => ({ id, expDate: document.getElementById('swal-input-exp').value })
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                // Blocking loader DIPERTAHANKAN: operasi edit menunggu server.
+                serverCall({
+                    fn: 'updateInboundExpDate',
+                    args: [result.value],
+                    blocking: true,
+                    alertOnError: true,
+                    onSuccess: res => {
+                        Swal.fire({ title: 'Berhasil!', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
+                        // SCOPED: Exp Date tidak mengubah QTY -> stock tidak perlu dimuat ulang.
+                        invalidateInboundClient();
+                        loadInboundData();
+                    }
+                });
+            });
+        }
+
+        // ===================== DATA KELUAR =====================
+
+        /** PRIORITAS 3 — transaksi keluar bulan berjalan (rentang default tab ini). */
+        function loadCurrentOutbound(opt) {
+            opt = opt || {};
+            return serverCall({
+                key: 'outboundCurrent',
+                fn: 'getCurrentMonthOutboundData',
+                args: [!!opt.force],
+                onSuccess: res => {
+                    if (REQ.outboundFull === 'ready') return;   // data penuh lebih lengkap
+                    globalOutboundData = normalizeTrxRows(res.data);
+                    if (isTabActive('tab-riwayat-keluar')) applyFilterOutbound();
+                },
+                onSettled: opt.onSettled
+            });
+        }
+
+        /** Seluruh histori keluar — tombol Refresh & background hydration. */
+        function loadOutboundData(opt) {
+            opt = opt || {};
+            return serverCall({
+                key: 'outboundFull',
+                fn: 'getOutboundData',
+                onSuccess: res => {
+                    globalOutboundData = normalizeTrxRows(res.data);
+                    if (isTabActive('tab-riwayat-keluar')) applyFilterOutbound();
+                },
+                onError: msg => { if (!opt.background) showAlert('Gagal', msg, 'error'); },
+                onSettled: opt.onSettled
+            });
+        }
+
+        function applyFilterOutbound() {
+            const startVal = document.getElementById('filter-out-start').value;
+            const endVal   = document.getElementById('filter-out-end').value;
+            const keyword  = document.getElementById('filter-out-name').value.toLowerCase();
+            const start = startVal ? new Date(startVal).setHours(0,0,0,0) : 0;
+            const end   = endVal   ? new Date(endVal).setHours(23,59,59,999) : Infinity;
+
+            // BOOSTER: _day & _search sudah dipre-compute (tanpa parsing ulang).
+            const filtered = globalOutboundData.filter(row =>
+                row._day >= start && row._day <= end && row._search.includes(keyword)
+            );
+
+            renderGroupedTable(filtered, 'outbound-tbody', 'outbound');
+        }
+
+        function editOutboundItem(id, tglEdit, qtyAwal) {
+            let isConsolidated = false;
+            if (id.startsWith('[') && id.endsWith(']')) isConsolidated = true;
+
+            Swal.fire({
+                title: 'Edit Data Keluar',
+                html: `<div style="text-align:left; margin-bottom:12px;">
+                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Ubah Tanggal</label>
+                    <input type="date" id="swal-input-tgl" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${tglEdit}">
+                </div>
+                <div style="text-align:left;">
+                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Ubah QTY ${isConsolidated ? '(Total Gabungan)' : ''}</label>
+                    <input type="number" id="swal-input-qty" step="0.01" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${qtyAwal}">
+                </div>
+                ${isConsolidated ? `<p style="font-size:0.75rem; color:var(--text-dim); text-align:left; margin-top:8px;"><i class="ph ph-info"></i> Mengubah QTY data gabungan akan mendistribusikan nilai baru ke data asal atau memproses baris utama.</p>` : ''}`,
+                showCancelButton: true, confirmButtonText: 'Simpan', cancelButtonText: 'Batal',
+                confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
+                background: 'var(--surface)', color: 'var(--text)',
+                preConfirm: () => {
+                    const tgl = document.getElementById('swal-input-tgl').value;
+                    const qty = document.getElementById('swal-input-qty').value;
+                    if (!tgl || !qty) { Swal.showValidationMessage('Tanggal dan QTY wajib diisi!'); return false; }
+                    let targetId = id;
+                    if (isConsolidated) {
+                        try { const parsedIds = JSON.parse(id); if (parsedIds.length > 0) targetId = parsedIds[0]; } catch(e) { console.error(e); }
+                    }
+                    return { id: targetId, tanggal:tgl, qty };
+                }
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                // Blocking loader DIPERTAHANKAN: operasi edit menunggu server.
+                serverCall({
+                    fn: 'updateOutboundData',
+                    args: [result.value],
+                    blocking: true,
+                    alertOnError: true,
+                    onSuccess: res => {
+                        Swal.fire({ title: 'Berhasil!', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
+                        invalidateOutboundClient();   // SCOPED: outbound + stock
+                        loadOutboundData();
+                        silentlyLoadStockBalances();
+                    }
+                });
+            });
+        }
+
+        // ===================== KARTU STOCK =====================
+        // loadStockData() / loadFullStock() didefinisikan di bagian
+        // "FORM KELUAR LOGIC" bersama loadCurrentStock() agar seluruh sumber
+        // kartu stock berada dalam satu tempat.
+
+        function renderFilteredStock() {
+            const keyword = document.getElementById('filter-item-name').value.toLowerCase();
+            const tbody   = document.getElementById('stock-tbody');
+            // BOOSTER: _search sudah dipre-compute saat data diterima.
+            const filtered = globalStockData.filter(r => _rowKey(r).includes(keyword));
+
+            if (!filtered.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Item tidak ditemukan atau kosong pada periode tersebut.</td></tr>';
+                return;
+            }
+
+            const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
+            filtered.forEach(row => {
+                const tr = document.createElement('tr');
+                const stockAwal  = row._awal;
+                const masukBiasa = row._masuk;
+                const keluar     = row._keluar;
+                const sisa       = row._sisa;
+                tr.innerHTML = `
+                    <td style="font-weight:700; color:var(--text);">${_rowLabel(row)}</td>
+                    <td style="text-align:center; color:var(--amber); font-weight:700;">${stockAwal.toFixed(2)}</td>
+                    <td style="text-align:center; color:var(--green); font-weight:700;">${masukBiasa.toFixed(2)}</td>
+                    <td style="text-align:center; color:var(--red); font-weight:700;">${keluar.toFixed(2)}</td>
+                    <td style="text-align:center;" class="${sisa<0?'sisa-neg':'sisa-pos'}">${sisa.toFixed(2)}</td>
+                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.uom}</td>
+                    <td style="text-align:center;">
+                        <button onclick="showStockDetail('${row.namaItem.replace(/'/g,"\\'")}')"
+                            style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:0.78rem; font-family:'Sora',sans-serif; display:inline-flex; align-items:center; gap:6px; font-weight:700;"
+                            onmouseover="this.style.background='rgba(15, 118, 110, 0.15)'" onmouseout="this.style.background='var(--accent-soft)'">
+                            <i class="ph ph-eye" style="font-size:0.95rem;"></i> Log
+                        </button>
+                    </td>`;
+                frag.appendChild(tr);
+            });
+            tbody.innerHTML = '';      // BOOSTER: satu kali clear
+            tbody.appendChild(frag);   // BOOSTER: satu kali insert
+        }
+
+        // ===================== MODAL DETAIL LOG =====================
+
+        function showStockDetail(itemName) {
+            const startDate = document.getElementById('filter-start').value;
+            const endDate   = document.getElementById('filter-end').value;
+
+            document.getElementById('modal-item-name').textContent = stripCode(itemName);
+            const tbody = document.getElementById('modal-tbody');
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-muted);"><i class="ph ph-circle-notch" style="animation:spin 1s linear infinite; display:inline-block; font-size:1.5rem;"></i><br><span style="display:inline-block; margin-top:8px;">Memuat data log...</span></td></tr>';
+            document.getElementById('detail-modal').classList.add('show');
+
+            serverCall({
+                key: 'itemDetailLog',
+                fn: 'getItemDetailLog',
+                args: [{ itemName, startDate, endDate }],
+                replace: true,                  // buka item lain saat loading tetap dilayani
+                quiet: true,   // modal punya indikator sendiri
+                onSuccess: res => {
+                    tbody.innerHTML = '';
+                    const logs = res.data;
+                    if (!logs.length) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">Tidak ada riwayat pada periode ini.</td></tr>';
+                        return;
+                    }
+
+                    const sorted = [...logs].sort((a,b) => new Date(a.rawDate||a.tanggal) - new Date(b.rawDate||b.tanggal));
+                    let running = 0;
+                    const withBalance = sorted.map(log => {
+                        const isInit  = log.jenis === 'INIT' || log.isStockAwal;
+                        const isMasuk = log.jenis === 'IN'   || isInit;
+                        if (isInit) running = parseFloat(log.qty);
+                        else running += isMasuk ? parseFloat(log.qty) : -parseFloat(log.qty);
+                        return { ...log, balance: running };
+                    });
+
+                    const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
+                    withBalance.reverse().forEach(log => {
+                        const tr      = document.createElement('tr');
+                        const isInit  = log.jenis === 'INIT' || log.isStockAwal;
+                        const isMasuk = log.jenis === 'IN'   || isInit;
+                        const adjBadge = log.isAdjustment ? ` <span class="badge badge-adj" style="padding:1px 6px;">ADJ</span>` : '';
+                        const badgeHtml = isInit ? `<span class="badge badge-init">AWAL</span>`
+                                        : isMasuk ? `<span class="badge badge-in">IN</span>${adjBadge}`
+                                        : `<span class="badge badge-out">OUT</span>${adjBadge}`;
+
+                        let expDateVal = '—', expStyle = '';
+                        if (isMasuk) {
+                            const rawExp = log.expDate || log.exp_date || log.expired || log.ket || log.keterangan;
+                            if (rawExp) { expDateVal = formatExpDate(rawExp); expStyle = getExpDateStyle(rawExp); }
+                        }
+
+                        tr.innerHTML = `
+                            <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${log.tanggal}</td>
+                            <td class="mono" style="font-size:0.78rem;"><span style="${expStyle}">${expDateVal}</span></td>
+                            <td style="text-align:center;">${badgeHtml}</td>
+                            <td style="text-align:right; font-weight:800; color:${isMasuk?'var(--green)':'var(--red)'};">${isMasuk?'+':'-'}${parseFloat(log.qty).toFixed(2)}</td>
+                            <td style="text-align:right; font-size:0.925rem; font-weight:800; background:rgba(15, 118, 110, 0.02);" class="${log.balance<0?'sisa-neg':'sisa-pos'}">${log.balance.toFixed(2)}</td>
+                            <td style="color:var(--text-dim); font-size:0.8rem; font-weight:500;">${log.uom}</td>`;
+                        frag.appendChild(tr);
+                    });
+                    tbody.appendChild(frag);   // BOOSTER: satu kali insert
+                },
+                onError: msg => {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:16px; color:var(--red);">${msg}</td></tr>`;
+                }
+            });
+        }
+
+        function closeModal() { document.getElementById('detail-modal').classList.remove('show'); }
+
+        // ===================== STOCK OPNAME =====================
+
+        /**
+         * Tombol "Setup Sheet OPNAME".
+         * Sebelumnya tombol ini memanggil nama fungsi backend langsung sehingga
+         * selalu gagal (ReferenceError) — sekarang dibungkus dengan benar dan
+         * sekalian menyiapkan sheet OPNAME_DRAFT.
+         */
+        function setupOpnameSheet() {
+            return serverCall({
+                fn: 'setupOpnameSheet',
+                blocking: true,
+                alertOnError: true,
+                onSuccess: res => showAlert('Berhasil', res.message, 'success')
+            });
+        }
+
+        // ---------- PERIODE: tampilan "Agustus 2026", internal tetap "2026-08" ----------
+
+        /** '2026-08' -> 'Agustus 2026'. Raw key tidak pernah tampil ke user. */
+        function formatPeriodeLabel(key) {
+            if (!key) return '';
+            const p = key.toString().split('-');
+            if (p.length < 2) return key;
+            const idx = parseInt(p[1], 10) - 1;
+            return `${BULAN[idx] || p[1]} ${p[0]}`;
+        }
+
+        /** Key internal periode yang sedang aktif ('YYYY-MM'). */
+        function getOpnamePeriodeKey() {
+            return document.getElementById('opn-periode').dataset.key || '';
+        }
+
+        function setOpnamePeriodeKey(key) {
+            const el = document.getElementById('opn-periode');
+            el.dataset.key = key || '';
+            el.value = formatPeriodeLabel(key);   // UI: Bulan + Tahun saja
+        }
+
+        function syncOpnamePeriode() {
+            const t = document.getElementById('opn-tanggal').value;
+            if (!t) { setOpnamePeriodeKey(''); return; }
+            // Dipotong dari string 'yyyy-MM-dd' (bukan new Date) agar tidak
+            // bergeser bulan pada browser dengan offset zona negatif.
+            const parts = t.split('-');
+            setOpnamePeriodeKey(`${parts[0]}-${parts[1]}`);
+        }
+
+        // ---------- SNAPSHOT ----------
+
+        function loadOpnameSnapshot() {
+            const tanggal = document.getElementById('opn-tanggal').value;
+            if (!tanggal) return showAlert('Perhatian', 'Pilih Tanggal Cut-Off terlebih dahulu!', 'warning');
+
+            const adaIsian = opnameSnapshot.some(it => it.fisik !== '' && it.fisik !== null && !isNaN(parseFloat(it.fisik)));
+            if (!adaIsian) return fetchOpnameSnapshot(tanggal);
+
+            Swal.fire({
+                title: 'Muat ulang Stock Sistem?',
+                html: `<div style="text-align:left; font-size:0.88rem; color:var(--text-muted); line-height:1.7;">
+                    Angka <b>Stock Sistem</b> akan dihitung ulang pada tanggal cut-off ini.<br>
+                    <b style="color:var(--green);">Stock Fisik dan catatan yang sudah Anda isi tetap dipertahankan.</b>
+                </div>`,
+                icon: 'question', showCancelButton: true,
+                confirmButtonText: 'Ya, Muat Ulang', cancelButtonText: 'Batal',
+                confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
+                background: 'var(--surface)', color: 'var(--text)'
+            }).then(r => { if (r.isConfirmed) fetchOpnameSnapshot(tanggal); });
+        }
+
+        function fetchOpnameSnapshot(tanggal) {
+            // Isian lama dipertahankan supaya pekerjaan user tidak hilang.
+            const prev = new Map();
+            opnameSnapshot.forEach(it => prev.set(it.namaItem, { fisik: it.fisik, catatan: it.catatan }));
+
+            const tbody = document.getElementById('opname-tbody');
+            if (tbody && !opnameSnapshot.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Memuat stock sistem…</td></tr>';
+            }
+
+            return serverCall({
+                key: 'opnameSnapshot',
+                fn: 'getOpnameSnapshot',
+                args: [tanggal],
+                replace: true,                  // ganti tanggal cut-off tetap dilayani
+                alertOnError: true,
+                onSuccess: res => {
+                    opnameSnapshot = (res.data || []).map(it => {
+                        const old = prev.get(it.namaItem);
+                        return buildSnapshotItem({
+                            namaItem: it.namaItem, uom: it.uom || '', altUom: it.altUom || '',
+                            sistem: parseFloat(it.sistem) || 0,
+                            fisik: old ? old.fisik : '',
+                            catatan: old ? old.catatan : ''
+                        });
+                    });
+                    renderOpnameTable();
+                    if (!opnameSnapshot.length) {
+                        showAlert('Info', 'Tidak ada item aktif untuk dihitung.', 'info');
+                    } else if (prev.size) {
+                        markDraftDirty();   // sistem berubah -> perlu disimpan ulang
+                    }
+                },
+                onError: msg => {
+                    renderOpnameTable();
+                    showAlert('Gagal', msg, 'error');
+                }
+            });
+        }
+
+        /** Item snapshot + kunci pencarian yang dipre-compute sekali. */
+        function buildSnapshotItem(src) {
+            const label = stripCode(src.namaItem);
+            return {
+                namaItem: src.namaItem,
+                uom: src.uom || '',
+                altUom: src.altUom || '',
+                sistem: parseFloat(src.sistem) || 0,   // SNAPSHOT — tidak dihitung ulang saat mengetik
+                fisik: (src.fisik === null || src.fisik === undefined) ? '' : src.fisik,
+                catatan: src.catatan || '',
+                _label: label,
+                _search: label.toLowerCase()
+            };
+        }
+
+        function setOpnameFisik(idx, val) {
+            if (!opnameSnapshot[idx]) return;
+            opnameSnapshot[idx].fisik = val;
+
+            const selEl = document.getElementById('opn-sel-' + idx);
+            const stEl  = document.getElementById('opn-st-' + idx);
+            const inpEl = document.getElementById('opn-inp-' + idx);
+            const sistem = parseFloat(opnameSnapshot[idx].sistem) || 0;
+
+            if (val === '' || val === null || isNaN(parseFloat(val))) {
+                if (selEl) { selEl.textContent = '—'; selEl.style.color = 'var(--text-dim)'; }
+                if (stEl)  stEl.innerHTML = '<span class="badge badge-neutral">Belum</span>';
+                if (inpEl) inpEl.classList.remove('filled');
+            } else {
+                const selisih = parseFloat((parseFloat(val) - sistem).toFixed(2));
+                if (inpEl) inpEl.classList.add('filled');
+                if (selEl) {
+                    selEl.textContent = (selisih > 0 ? '+' : '') + selisih.toFixed(2);
+                    selEl.style.color = selisih > 0 ? 'var(--green)' : (selisih < 0 ? 'var(--red)' : 'var(--text-muted)');
+                }
+                if (stEl) {
+                    stEl.innerHTML = selisih > 0 ? '<span class="badge badge-in">MASUK</span>'
+                                   : selisih < 0 ? '<span class="badge badge-out">KELUAR</span>'
+                                   : '<span class="badge badge-init">SESUAI</span>';
+                }
+            }
+            updateOpnameSummary();
+            markDraftDirty();   // AUTOSAVE (silent, debounce ~1 detik)
+        }
+
+        function setOpnameCatatan(idx, val) {
+            if (!opnameSnapshot[idx]) return;
+            opnameSnapshot[idx].catatan = val;
+            markDraftDirty();
+        }
+
+        function renderOpnameTable() {
+            const tbody = document.getElementById('opname-tbody');
+            const keyword = (document.getElementById('opn-search').value || '').toLowerCase();
+
+            if (!opnameSnapshot.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Tekan <b>“Muat Stock Sistem”</b> untuk memulai perhitungan opname.</td></tr>';
+                document.getElementById('btn-process-opname').disabled = true;
+                updateOpnameSummary();
+                return;
+            }
+
+            let shown = 0;
+            const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
+            opnameSnapshot.forEach((it, idx) => {
+                if (keyword && !(it._search !== undefined ? it._search : stripCode(it.namaItem).toLowerCase()).includes(keyword)) return;
+                shown++;
+                const sistem = parseFloat(it.sistem) || 0;
+                const hasVal = it.fisik !== '' && it.fisik !== null && !isNaN(parseFloat(it.fisik));
+                const selisih = hasVal ? parseFloat((parseFloat(it.fisik) - sistem).toFixed(2)) : null;
+
+                let selTxt = '—', selColor = 'var(--text-dim)', stHtml = '<span class="badge badge-neutral">Belum</span>';
+                if (hasVal) {
+                    selTxt = (selisih > 0 ? '+' : '') + selisih.toFixed(2);
+                    selColor = selisih > 0 ? 'var(--green)' : (selisih < 0 ? 'var(--red)' : 'var(--text-muted)');
+                    stHtml = selisih > 0 ? '<span class="badge badge-in">MASUK</span>'
+                           : selisih < 0 ? '<span class="badge badge-out">KELUAR</span>'
+                           : '<span class="badge badge-init">SESUAI</span>';
+                }
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="text-align:center; color:var(--text-dim); font-size:0.78rem; font-weight:600;">${idx+1}</td>
+                    <td style="font-weight:700; color:var(--text);">${it._label !== undefined ? it._label : stripCode(it.namaItem)}</td>
+                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${it.uom || '—'}</td>
+                    <td style="text-align:right; font-weight:700; color:var(--blue); font-family:'JetBrains Mono',monospace;">${sistem.toFixed(2)}</td>
+                    <td style="text-align:right;">
+                        <input type="number" step="0.01" id="opn-inp-${idx}" class="opname-input${hasVal?' filled':''}" placeholder="0.00"
+                            value="${hasVal ? it.fisik : ''}" oninput="setOpnameFisik(${idx}, this.value)">
+                    </td>
+                    <td id="opn-sel-${idx}" style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${selColor};">${selTxt}</td>
+                    <td id="opn-st-${idx}" style="text-align:center;">${stHtml}</td>`;
+                frag.appendChild(tr);
+            });
+
+            if (shown === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Item tidak ditemukan.</td></tr>';
+            } else {
+                tbody.innerHTML = '';      // BOOSTER: satu kali clear
+                tbody.appendChild(frag);   // BOOSTER: satu kali insert
+            }
+
+            document.getElementById('btn-process-opname').disabled = opnameSnapshot.length === 0;
+            updateOpnameSummary();
+        }
+
+        function updateOpnameSummary() {
+            let counted = 0, plus = 0, minus = 0;
+            opnameSnapshot.forEach(it => {
+                const hasVal = it.fisik !== '' && it.fisik !== null && !isNaN(parseFloat(it.fisik));
+                if (!hasVal) return;
+                counted++;
+                const selisih = parseFloat(it.fisik) - (parseFloat(it.sistem) || 0);
+                if (selisih > 0) plus++; else if (selisih < 0) minus++;
+            });
+            document.getElementById('opn-c-total').textContent   = opnameSnapshot.length;
+            document.getElementById('opn-c-counted').textContent = counted;
+            document.getElementById('opn-c-plus').textContent    = plus;
+            document.getElementById('opn-c-minus').textContent   = minus;
+            document.getElementById('btn-process-opname').disabled = counted === 0 || opnameDraftStatus === 'PROCESSED';
+            const btnDraft = document.getElementById('btn-save-draft');
+            if (btnDraft) btnDraft.disabled = opnameSnapshot.length === 0 || opnameDraftStatus === 'PROCESSED';
+        }
+
+        // ===================== STOCK OPNAME · DRAFT =====================
+        //
+        // ATURAN: Draft TIDAK PERNAH membuat adjustment. Menyimpan draft hanya
+        // menulis ke Sheet OPNAME_DRAFT. Adjustment baru dibuat oleh
+        // processOpname() -> saveOpnameData() (proses final).
+
+        function setDraftStatusText(state, text) {
+            const el = document.getElementById('opn-draft-status');
+            if (!el) return;
+            el.className = 'draft-status' + (state ? ' ' + state : '');
+            el.textContent = text || '';
+        }
+
+        function fmtJam(ts) {
+            if (!ts) return '—';
+            const d = new Date(ts);
+            if (isNaN(d.getTime())) return '—';
+            const tgl = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+            const jam = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+            const hariIni = new Date(); hariIni.setHours(0,0,0,0);
+            return (d.getTime() >= hariIni.getTime()) ? jam : `${tgl} ${jam}`;
+        }
+
+        /** Tandai ada perubahan -> jadwalkan autosave silent. */
+        function markDraftDirty() {
+            if (!opnameSnapshot.length) return;
+            if (opnameDraftStatus === 'PROCESSED') return;
+            setDraftStatusText('', 'Perubahan belum disimpan…');
+            _autosaveDraft();
+        }
+
+        /** Cek apakah ada draft tertinggal di server. */
+        function checkOpnameDraft(opt) {
+            opt = opt || {};
+            return serverCall({
+                key: 'opnameDraft',
+                fn: 'getOpnameDraft',
+                quiet: true,     // pengecekan kecil, tidak perlu indikator
+                onSuccess: res => {
+                    pendingDraftInfo = res.data || null;
+                    // Draft yang sedang dikerjakan tidak perlu ditawarkan lagi.
+                    if (pendingDraftInfo && pendingDraftInfo.draftId === opnameDraftId) pendingDraftInfo = null;
+                    renderDraftBanner();
+                },
+                onSettled: opt.onSettled
+            });
+        }
+
+        function renderDraftBanner() {
+            const banner = document.getElementById('opn-draft-banner');
+            if (!banner) return;
+            if (!pendingDraftInfo) { banner.classList.remove('show'); return; }
+
+            document.getElementById('draft-info-periode').textContent  = formatPeriodeLabel(pendingDraftInfo.periode) || '—';
+            document.getElementById('draft-info-pic').textContent      = pendingDraftInfo.petugas || '—';
+            document.getElementById('draft-info-progress').textContent = `${pendingDraftInfo.counted || 0} / ${pendingDraftInfo.total || 0} item`;
+            document.getElementById('draft-info-saved').textContent    = fmtJam(pendingDraftInfo.updatedAt);
+            banner.classList.add('show');
+        }
+
+        /** LANJUTKAN DRAFT — Stock Sistem diambil dari snapshot draft, bukan dihitung ulang. */
+        function resumeOpnameDraft() {
+            if (!pendingDraftInfo) return;
+            const d = pendingDraftInfo;
+
+            if (d.tanggal) document.getElementById('opn-tanggal').value = d.tanggal;
+            syncOpnamePeriode();
+            if (d.periode) setOpnamePeriodeKey(d.periode);   // periode draft yang menang
+            document.getElementById('opn-petugas').value = d.petugas || '';
+
+            opnameSnapshot = (d.items || []).map(it => buildSnapshotItem({
+                namaItem: it.namaItem, uom: it.uom, altUom: it.altUom,
+                sistem: it.sistem,                                   // SNAPSHOT dipertahankan
+                fisik: (it.fisik === '' || it.fisik === null || it.fisik === undefined) ? '' : String(it.fisik),
+                catatan: it.catatan
+            }));
+
+            opnameDraftId = d.draftId;
+            opnameDraftStatus = 'DRAFT';
+            pendingDraftInfo = null;
+
+            renderOpnameTable();
+            renderDraftBanner();
+            document.getElementById('btn-delete-draft').style.display = '';
+            setDraftStatusText('saved', `✓ Draft dimuat · tersimpan ${fmtJam(d.updatedAt)}`);
+        }
+
+        /** BUAT BARU — draft lama dibuang setelah konfirmasi eksplisit. */
+        function startNewOpname() {
+            const old = pendingDraftInfo;
+            Swal.fire({
+                title: 'Buat opname baru?',
+                html: `<div style="text-align:left; font-size:0.88rem; color:var(--text-muted); line-height:1.7;">
+                    Draft <b>${old ? formatPeriodeLabel(old.periode) : ''}</b> (${old ? (old.counted||0) : 0} item terisi) akan <b style="color:var(--red);">dihapus</b>.<br>
+                    Tindakan ini tidak dapat dibatalkan.
+                </div>`,
+                icon: 'warning', showCancelButton: true,
+                confirmButtonText: 'Ya, Hapus & Buat Baru', cancelButtonText: 'Batal',
+                confirmButtonColor: 'var(--red)', cancelButtonColor: 'var(--border-light)',
+                background: 'var(--surface)', color: 'var(--text)'
+            }).then(r => {
+                if (!r.isConfirmed) return;
+                const draftId = old ? old.draftId : null;
+                pendingDraftInfo = null;
+                renderDraftBanner();
+                resetOpnameWorkspace();
+                if (draftId) {
+                    serverCall({
+                        fn: 'deleteOpnameDraft',
+                        args: [{ draftId }],
+                        onError: () => {}    // gagal hapus tidak boleh mengganggu opname baru
+                    });
+                }
+            });
+        }
+
+        function resetOpnameWorkspace() {
+            opnameSnapshot = [];
+            opnameDraftId = null;
+            opnameDraftStatus = null;
+            _draftDirty = false;
+            document.getElementById('btn-delete-draft').style.display = 'none';
+            setDraftStatusText('', '');
+            renderOpnameTable();
+        }
+
+        /** Tombol "Simpan Draft" (manual). */
+        function saveOpnameDraftManual() {
+            if (!opnameSnapshot.length) return showAlert('Perhatian', 'Muat Stock Sistem terlebih dahulu.', 'warning');
+            saveOpnameDraftToServer(false);
+        }
+
+        /**
+         * Simpan draft ke Sheet OPNAME_DRAFT.
+         * @param {boolean} silent true untuk autosave (tanpa SweetAlert).
+         */
+        function saveOpnameDraftToServer(silent) {
+            if (!opnameSnapshot.length) return false;
+            if (opnameDraftStatus === 'PROCESSED') {
+                if (!silent) showAlert('Perhatian', 'Draft ini sudah diproses dan tidak dapat diubah.', 'warning');
+                return false;
+            }
+
+            const tanggal = document.getElementById('opn-tanggal').value;
+            if (!tanggal) {
+                if (!silent) showAlert('Perhatian', 'Tanggal Cut-Off harus diisi!', 'warning');
+                return false;
+            }
+
+            setDraftStatusText('saving', 'Menyimpan draft…');
+
+            const payload = {
+                draftId: opnameDraftId || '',
+                tanggal: tanggal,
+                periode: getOpnamePeriodeKey(),
+                petugas: document.getElementById('opn-petugas').value.trim(),
+                items: opnameSnapshot.map(it => ({
+                    namaItem: it.namaItem, uom: it.uom, altUom: it.altUom,
+                    sistem: it.sistem, fisik: it.fisik, catatan: it.catatan
+                }))
+            };
+
+            const started = serverCall({
+                key: 'draftSave',
+                fn: 'saveOpnameDraft',
+                args: [payload],
+                quiet: silent,                 // autosave benar-benar senyap
+                onSuccess: res => {
+                    opnameDraftId = res.draftId;
+                    opnameDraftStatus = 'DRAFT';
+                    document.getElementById('btn-delete-draft').style.display = '';
+                    setDraftStatusText('saved', `✓ Draft tersimpan ${res.savedAt}`);
+                    if (!silent) {
+                        Swal.fire({
+                            toast: true, position: 'top-end', showConfirmButton: false, timer: 2200,
+                            icon: 'success', title: `Draft tersimpan (${res.counted}/${res.total} item)`,
+                            background: 'var(--surface)', color: 'var(--text)'
+                        });
+                    }
+                },
+                onError: msg => {
+                    setDraftStatusText('failed', '⚠ Draft gagal disimpan — akan dicoba lagi');
+                    if (!silent) showAlert('Gagal', msg, 'error');
+                },
+                onSettled: () => {
+                    // Perubahan yang masuk saat request berjalan tidak boleh hilang.
+                    if (_draftDirty) { _draftDirty = false; _autosaveDraft(); }
+                }
+            });
+
+            // Request di-skip karena masih ada penyimpanan berjalan -> coba lagi nanti.
+            if (!started) _draftDirty = true;
+            return started;
+        }
+
+        /** Hapus draft aktif. */
+        function deleteOpnameDraftUI() {
+            if (!opnameDraftId) return;
+            Swal.fire({
+                title: 'Hapus draft?',
+                text: 'Seluruh progress perhitungan pada draft ini akan dihapus.',
+                icon: 'warning', showCancelButton: true,
+                confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal',
+                confirmButtonColor: 'var(--red)', cancelButtonColor: 'var(--border-light)',
+                background: 'var(--surface)', color: 'var(--text)'
+            }).then(r => {
+                if (!r.isConfirmed) return;
+                serverCall({
+                    fn: 'deleteOpnameDraft',
+                    args: [{ draftId: opnameDraftId }],
+                    blocking: true,
+                    alertOnError: true,
+                    onSuccess: res => {
+                        resetOpnameWorkspace();
+                        Swal.fire({
+                            toast: true, position: 'top-end', showConfirmButton: false, timer: 2200,
+                            icon: 'success', title: res.message,
+                            background: 'var(--surface)', color: 'var(--text)'
+                        });
+                    }
+                });
+            });
+        }
+
+        function processOpname() {
+            const tanggal = document.getElementById('opn-tanggal').value;
+            const periode = getOpnamePeriodeKey();
+            const petugas = document.getElementById('opn-petugas').value.trim();
+            if (!tanggal) return showAlert('Perhatian', 'Tanggal Cut-Off harus diisi!', 'warning');
+            if (opnameDraftStatus === 'PROCESSED') {
+                return showAlert('Perhatian', 'Draft ini sudah diproses. Adjustment tidak dibuat ulang.', 'warning');
+            }
+
+            const counted = opnameSnapshot.filter(it => it.fisik !== '' && it.fisik !== null && !isNaN(parseFloat(it.fisik)));
+            if (!counted.length) return showAlert('Perhatian', 'Isi minimal satu Stock Fisik untuk diproses.', 'warning');
+
+            let plus = 0, minus = 0, sesuai = 0;
+            counted.forEach(it => {
+                const s = parseFloat(it.fisik) - (parseFloat(it.sistem) || 0);
+                if (s > 0) plus++; else if (s < 0) minus++; else sesuai++;
+            });
+
+            Swal.fire({
+                title: 'Proses Stock Opname?',
+                html: `<div style="text-align:left; font-size:0.88rem; color:var(--text-muted); line-height:1.7;">
+                    Periode: <b style="color:var(--text);">${document.getElementById('opn-periode').value}</b><br>
+                    Item dihitung: <b>${counted.length}</b><br>
+                    <span style="color:var(--green);">▲ Adjustment Masuk: <b>${plus}</b> item</span><br>
+                    <span style="color:var(--red);">▼ Adjustment Keluar: <b>${minus}</b> item</span><br>
+                    <span style="color:var(--text-dim);">● Sesuai: ${sesuai} item</span>
+                </div>`,
+                icon: 'question', showCancelButton: true,
+                confirmButtonText: 'Ya, Proses', cancelButtonText: 'Batal',
+                confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
+                background: 'var(--surface)', color: 'var(--text)'
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                // Blocking loader DIPERTAHANKAN: proses final harus ditunggu.
+                // LockService + pengecekan status draft ada di sisi backend.
+                serverCall({
+                    key: 'opnameFinal',
+                    fn: 'saveOpnameData',
+                    args: [{ tanggal, periode, petugas, draftId: opnameDraftId || '', items: counted }],
+                    blocking: true,
+                    alertOnError: true,
+                    onSuccess: res => {
+                        const s = res.summary || {};
+                        Swal.fire({
+                            title: 'Opname Selesai!',
+                            html: `<div style="font-size:0.9rem; color:var(--text-muted); line-height:1.7;">
+                                ${res.message}<br>
+                                <b style="color:var(--green);">+${(s.adjPlus||0).toFixed(2)}</b> masuk ·
+                                <b style="color:var(--red);">-${(s.adjMinus||0).toFixed(2)}</b> keluar
+                            </div>`,
+                            icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)'
+                        });
+
+                        // Draft yang sudah diproses ditutup di backend (status
+                        // PROCESSED) sehingga tidak mungkin diproses dua kali.
+                        // Di sisi UI cukup kosongkan workspace untuk opname berikutnya.
+                        resetOpnameWorkspace();
+                        pendingDraftInfo = null;
+                        renderDraftBanner();
+
+                        // SCOPED: stock + inbound + outbound + laporan opname.
+                        invalidateOutboundClient();
+                        invalidateInboundClient();
+                        globalOpnameReport = [];
+                        opnameReportSummary = null;
+                        REQ.opnameReport = 'idle';
+                        REQ.opnamePeriod = 'idle';
+                        REQ.opnameDraft  = 'idle';
+
+                        silentlyLoadStockBalances();
+                        switchTab('tab-laporan');
+                    }
+                });
+            });
+        }
+
+        // ===================== LAPORAN OPNAME =====================
+
+        /** Dropdown periode: value tetap 'YYYY-MM', label hanya "Agustus 2026". */
+        function loadOpnamePeriods(opt) {
+            opt = opt || {};
+            return serverCall({
+                key: 'opnamePeriod',
+                fn: 'getOpnamePeriods',
+                quiet: true,
+                onSuccess: res => {
+                    const sel = document.getElementById('laporan-periode');
+                    const current = sel.value;
+                    const frag = document.createDocumentFragment();   // BOOSTER
+                    const optAll = document.createElement('option');
+                    optAll.value = ''; optAll.textContent = 'Semua Periode';
+                    frag.appendChild(optAll);
+                    (res.data || []).forEach(p => {
+                        const o = document.createElement('option');
+                        o.value = p;                       // internal: 2026-08
+                        o.textContent = formatPeriodeLabel(p);  // UI: Agustus 2026
+                        frag.appendChild(o);
+                    });
+                    sel.innerHTML = '';
+                    sel.appendChild(frag);
+                    sel.value = current;
+                },
+                onError: () => {},   // dropdown periode gagal tidak boleh mengganggu apa pun
+                onSettled: opt.onSettled
+            });
+        }
+
+        /** Ganti periode pada dropdown -> muat ulang laporan (aman dari race). */
+        function onLaporanPeriodeChange() {
+            globalOpnameReport = [];
+            REQ.opnameReport = 'idle';
+            loadOpnameReport({ userInitiated: true });
+        }
+
+        function loadOpnameReport(opt) {
+            opt = opt || {};
+            const periode = document.getElementById('laporan-periode').value;
+            const tbody = document.getElementById('laporan-tbody');
+            if (opt.userInitiated && tbody) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Memuat laporan…</td></tr>';
+            }
+            return serverCall({
+                key: 'opnameReport',
+                fn: 'getOpnameHistory',
+                args: [{ periode: periode, force: !!opt.force }],
+                replace: !!opt.userInitiated,   // ganti periode saat loading tetap dilayani
+                onSuccess: res => {
+                    globalOpnameReport = normalizeReportRows(res.data);
+                    opnameReportSummary = res.summary || null;
+                    renderOpnameStats(opnameReportSummary);
+                    renderOpnameReport();
+                },
+                onError: msg => { if (!opt.background) showAlert('Gagal', msg, 'error'); },
+                onSettled: opt.onSettled
+            });
+        }
+
+        /** Tombol Refresh laporan: lewati cache server. */
+        function refreshOpnameReport() {
+            globalOpnameReport = [];
+            REQ.opnameReport = 'idle';
+            REQ.opnamePeriod = 'idle';
+            loadOpnamePeriods();
+            return loadOpnameReport({ userInitiated: true, force: true });
+        }
+
+        function normalizeReportRows(rows) {
+            const out = [];
+            for (const r of (rows || [])) {
+                r._label  = stripCode(r.namaItem);
+                r._search = r._label.toLowerCase();
+                out.push(r);
+            }
+            return out;
+        }
+
+        function renderOpnameStats(s) {
+            if (!s) s = { adjPlus:0, adjMinus:0, net:0, cntPlus:0, cntMinus:0, cntSesuai:0, totalItems:0, akurasi:100 };
+            document.getElementById('stat-plus').textContent    = (s.adjPlus||0).toFixed(2);
+            document.getElementById('stat-plus-c').textContent  = s.cntPlus || 0;
+            document.getElementById('stat-minus').textContent   = (s.adjMinus||0).toFixed(2);
+            document.getElementById('stat-minus-c').textContent = s.cntMinus || 0;
+            const net = s.net || 0;
+            const netEl = document.getElementById('stat-net');
+            netEl.textContent = (net>0?'+':'') + net.toFixed(2);
+            netEl.style.color = net > 0 ? 'var(--green)' : (net < 0 ? 'var(--red)' : 'var(--blue)');
+            document.getElementById('stat-total').textContent   = s.totalItems || 0;
+            document.getElementById('stat-akurasi').textContent = (s.akurasi != null ? s.akurasi : 100) + '%';
+            document.getElementById('stat-sesuai-c').textContent = s.cntSesuai || 0;
+        }
+
+        function renderOpnameReport() {
+            const tbody = document.getElementById('laporan-tbody');
+            const keyword = (document.getElementById('laporan-search').value || '').toLowerCase();
+
+            // Print meta — label periode sudah berupa "Agustus 2026"
+            const selPer = document.getElementById('laporan-periode');
+            document.getElementById('print-periode').textContent =
+                selPer.value ? (selPer.options[selPer.selectedIndex] ? selPer.options[selPer.selectedIndex].text : formatPeriodeLabel(selPer.value)) : 'Semua';
+            document.getElementById('print-date').textContent = new Date().toLocaleString('id-ID');
+
+            const filtered = globalOpnameReport.filter(r => _rowKey(r).includes(keyword));
+            if (!filtered.length) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Belum ada laporan opname pada filter ini.</td></tr>';
+                return;
+            }
+
+            filtered.sort((a,b) => (b.rawDate - a.rawDate) || _rowLabel(a).localeCompare(_rowLabel(b)));
+            let currentGroup = '', groupId = 0;
+            const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
+
+            filtered.forEach(row => {
+                if (row.tanggalGroup !== currentGroup) {
+                    currentGroup = row.tanggalGroup; groupId++;
+                    const gtr = document.createElement('tr');
+                    gtr.className = 'group-hdr grp-laporan-print';
+                    gtr.innerHTML = `<td colspan="9"><div class="group-hdr-inner" style="cursor:default;">
+                        <span style="font-size:0.825rem; font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px;">
+                            <i class="ph ph-calendar-check" style="font-size:1.15rem;"></i> ${currentGroup}
+                        </span>
+                        <span style="font-size:0.72rem; color:var(--text-dim); font-weight:700; letter-spacing:0.04em;">${formatPeriodeLabel(row.periode)}</span>
+                    </div></td>`;
+                    frag.appendChild(gtr);
+                }
+
+                const sel = parseFloat(row.selisih) || 0;
+                const jenisBadge = row.jenis === 'MASUK' ? '<span class="badge badge-in">MASUK</span>'
+                                 : row.jenis === 'KELUAR' ? '<span class="badge badge-out">KELUAR</span>'
+                                 : '<span class="badge badge-init">SESUAI</span>';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.tanggal}</td>
+                    <td style="font-weight:700; color:var(--text);">${_rowLabel(row)}</td>
+                    <td style="color:var(--text-muted); font-size:0.8rem;">${row.uom || '—'}</td>
+                    <td style="text-align:right; color:var(--blue); font-weight:700; font-family:'JetBrains Mono',monospace;">${(parseFloat(row.sistem)||0).toFixed(2)}</td>
+                    <td style="text-align:right; color:var(--accent); font-weight:700; font-family:'JetBrains Mono',monospace;">${(parseFloat(row.fisik)||0).toFixed(2)}</td>
+                    <td style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${sel>0?'var(--green)':(sel<0?'var(--red)':'var(--text-muted)')};">${sel>0?'+':''}${sel.toFixed(2)}</td>
+                    <td style="text-align:center;">${jenisBadge}</td>
+                    <td style="color:var(--text-muted); font-size:0.8rem;">${row.petugas || '—'}</td>
+                    <td style="color:var(--text-dim); font-size:0.78rem;">${row.catatan || '—'}</td>`;
+                frag.appendChild(tr);
+            });
+            tbody.innerHTML = '';      // BOOSTER: satu kali clear
+            tbody.appendChild(frag);   // BOOSTER: satu kali insert
+        }
+
+        // ==========================================================
+        // 🔎 SCAN BARCODE — SEMUA PENCARIAN NAMA ITEM
+        // ==========================================================
+        //
+        // Modul ini TIDAK mengubah business logic mana pun.
+        // Hasil scan hanya DITERJEMAHKAN menjadi:
+        //   - pilihan item pada dropdown Nama Item (form Keluar), atau
+        //   - teks pada kolom pencarian yang sudah ada,
+        // lalu fungsi filter/render YANG SUDAH ADA dipanggil apa adanya.
+        //
+        // Sumber kode yang dikenali (berurutan):
+        //   1. Kolom BARCODE pada sheet AWAL (bila ada)   -> item.barcode
+        //   2. Kode dalam kurung siku pada nama item      -> "[BR001] Kopi Susu"
+        //   3. Nama item / label persis (mis. QR berisi nama)
+        //   4. Pencocokan sebagian nama item
+        //
+        // Dua cara input didukung sekaligus:
+        //   - Kamera  : BarcodeDetector bawaan browser, fallback ZXing (lazy load)
+        //   - Scanner alat (USB/Bluetooth HID) : mengetik seperti keyboard + Enter
+        // ==========================================================
+
+        const SCAN_TARGETS = {
+            'out-item':         { label: 'Nama Item · Transaksi Keluar', type: 'select' },
+            'filter-out-name':  { label: 'Cari Item · Riwayat Keluar',   type: 'filter', apply: applyFilterOutbound },
+            'filter-in-name':   { label: 'Cari Item · Data Masuk',       type: 'filter', apply: applyFilterInbound },
+            'filter-item-name': { label: 'Cari Item · Kartu Stock',      type: 'filter', apply: renderFilteredStock },
+            'opn-search':       { label: 'Cari Item · Stock Opname',     type: 'filter', apply: renderOpnameTable, after: focusOpnameRow },
+            'laporan-search':   { label: 'Cari Item · Laporan Opname',   type: 'filter', apply: renderOpnameReport }
+        };
+
+        let _scanTargetId  = null;
+        let _scanStream    = null;
+        let _scanTrack     = null;
+        let _scanLoopId    = null;
+        let _scanDetector  = null;
+        let _zxingReader   = null;
+        let _zxingLoading  = null;
+        let _lastScanCode  = '';
+        let _lastScanAt    = 0;
+        let _scanPool      = [];          // [{namaItem, label, compact, labelCompact}]
+        let _scanCodeIndex = new Map();   // kode ternormalisasi -> [namaItem]
+        let _scanLooseIndex = new Map();  // kode alfanumerik saja -> [namaItem]
+        let _scanAudioCtx  = null;
+
+        // ---------------- Normalisasi kode ----------------
+
+        function _normCode(v) {
+            return (v === null || v === undefined) ? '' : v.toString().trim().toUpperCase().replace(/\s+/g, '');
+        }
+        function _looseCode(v) {
+            return _normCode(v).replace(/[^A-Z0-9]/g, '');
+        }
+        /** EAN-13 vs UPC-A: 0012345678905 dan 012345678905 dianggap sama. */
+        function _noZeroCode(v) {
+            return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || v) : v;
+        }
+        function _escHtml(v) {
+            return (v === null || v === undefined) ? '' : v.toString()
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        // ---------------- Index kode -> item ----------------
+
+        function _indexScanCode(code, namaItem) {
+            const k = _normCode(code);
+            if (k.length < 2) return;
+            const push = (map, key) => {
+                if (!key || key.length < 2) return;
+                let arr = map.get(key);
+                if (!arr) { arr = []; map.set(key, arr); }
+                if (arr.indexOf(namaItem) === -1) arr.push(namaItem);
+            };
+            push(_scanCodeIndex, k);
+            push(_scanCodeIndex, _noZeroCode(k));
+            push(_scanLooseIndex, _looseCode(k));
+        }
+
+        /**
+         * Dibangun ulang setiap kali jendela scan dibuka (murah, < 1 ms untuk
+         * ribuan item) sehingga tidak perlu menyisipkan hook ke fungsi-fungsi
+         * pemuat data yang sudah ada.
+         */
+        function buildScanIndex() {
+            _scanCodeIndex  = new Map();
+            _scanLooseIndex = new Map();
+            _scanPool       = [];
+            const seen = new Set();
+
+            const addItem = (namaItem, barcode) => {
+                if (!namaItem) return;
+                const raw = namaItem.toString().trim();
+                if (!raw || seen.has(raw)) return;
+                seen.add(raw);
+
+                const label = stripCode(raw);
+                _scanPool.push({
+                    namaItem: raw,
+                    label: label,
+                    compact: raw.toUpperCase().replace(/\s+/g, ''),
+                    labelCompact: label.toUpperCase().replace(/\s+/g, '')
+                });
+
+                const m = raw.match(/^\[([^\]]*)\]/);           // kode "[BR001] Nama Item"
+                if (m && m[1]) _indexScanCode(m[1], raw);
+                if (barcode) {                                   // kolom BARCODE sheet AWAL
+                    barcode.toString().split(/[,;|]/).forEach(b => _indexScanCode(b, raw));
+                }
+            };
+
+            (masterItems || []).forEach(it => addItem(it.namaItem, it.barcode));
+            [globalStockData, opnameSnapshot, globalInboundData, globalOutboundData, globalOpnameReport]
+                .forEach(arr => (arr || []).forEach(r => { if (r) addItem(r.namaItem); }));
+        }
+
+        /**
+         * Menerjemahkan hasil scan menjadi item.
+         * @return {Object} { status:'found'|'multi'|'none', names:[namaItem] }
+         */
+        function resolveScannedCode(code) {
+            if (!_scanPool.length) buildScanIndex();
+            const norm = _normCode(code);
+            if (!norm) return { status: 'none', names: [] };
+
+            // 1-2. kode barcode / kode dalam kurung siku
+            const hit = _scanCodeIndex.get(norm)
+                     || _scanCodeIndex.get(_noZeroCode(norm))
+                     || _scanLooseIndex.get(_looseCode(norm));
+            if (hit && hit.length) {
+                return { status: hit.length === 1 ? 'found' : 'multi', names: hit.slice(0, 15) };
+            }
+
+            // 3. nama item / label persis
+            const exact = _scanPool.filter(x => x.compact === norm || x.labelCompact === norm);
+            if (exact.length) {
+                return { status: exact.length === 1 ? 'found' : 'multi', names: exact.map(x => x.namaItem).slice(0, 15) };
+            }
+
+            // 4. pencocokan sebagian (hanya bila kode cukup panjang)
+            if (norm.length >= 3) {
+                const part = _scanPool.filter(x => x.compact.indexOf(norm) > -1);
+                if (part.length === 1) return { status: 'found', names: [part[0].namaItem] };
+                if (part.length > 1)   return { status: 'multi', names: part.map(x => x.namaItem).slice(0, 15) };
+            }
+            return { status: 'none', names: [] };
+        }
+
+        // ---------------- Penerapan hasil scan ----------------
+
+        function toastScan(kind, text) {
+            try {
+                Swal.fire({
+                    toast: true, position: 'top-end', timer: 2800, timerProgressBar: true,
+                    showConfirmButton: false, icon: kind === 'ok' ? 'success' : 'warning',
+                    title: text, background: 'var(--surface)', color: 'var(--text)'
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        /** Fokuskan kolom Stock Fisik milik item yang baru di-scan (tab Opname). */
+        function focusOpnameRow(namaItem) {
+            if (!namaItem) return;
+            let idx = -1;
+            for (let i = 0; i < opnameSnapshot.length; i++) {
+                if (opnameSnapshot[i].namaItem === namaItem) { idx = i; break; }
+            }
+            if (idx < 0) return;
+            const inp = document.getElementById('opn-inp-' + idx);
+            if (!inp) return;
+            try { inp.scrollIntoView({ block: 'center' }); } catch (e) {}
+            inp.focus();
+            try { inp.select(); } catch (e) {}
+        }
+
+        /**
+         * @param {string}  targetId  kolom pencarian tujuan
+         * @param {?string} namaItem  nama item hasil pencocokan (null bila kode mentah)
+         * @param {string}  rawCode   kode asli hasil scan
+         */
+        function applyScanToTarget(targetId, namaItem, rawCode) {
+            const t = SCAN_TARGETS[targetId];
+            if (!t) return;
+
+            // --- Dropdown Nama Item (master item) ---
+            if (t.type === 'select') {
+                const ts = tomSelectInstance;
+                if (!ts) return;
+                if (namaItem && ts.options && ts.options[namaItem]) {
+                    // Memicu onChange bawaan: UOM, ALT UOM, Sisa Stock, fokus QTY.
+                    ts.setValue(namaItem);
+                    toastScan('ok', stripCode(namaItem));
+                    return;
+                }
+                if (namaItem) {
+                    toastScan('warn', '“' + stripCode(namaItem) + '” tidak aktif di master item.');
+                    return;
+                }
+                try {                       // kode tidak dikenal -> jadikan kata kunci dropdown
+                    ts.focus();
+                    ts.setTextboxValue(rawCode);
+                    ts.refreshOptions(true);
+                } catch (e) { console.error(e); }
+                toastScan('warn', 'Kode “' + rawCode + '” dipakai sebagai kata kunci.');
+                return;
+            }
+
+            // --- Kolom pencarian teks ---
+            const el = document.getElementById(targetId);
+            if (!el) return;
+            el.value = namaItem ? stripCode(namaItem) : rawCode;
+            try { if (t.apply) t.apply(); } catch (e) { console.error(e); }   // filter existing, tanpa debounce
+
+            if (namaItem) {
+                if (t.after) setTimeout(() => { try { t.after(namaItem); } catch (e) { console.error(e); } }, 60);
+                toastScan('ok', stripCode(namaItem));
+            } else {
+                toastScan('warn', 'Kode “' + rawCode + '” dipakai sebagai kata kunci.');
+            }
+        }
+
+        /** Beberapa item memakai kode yang sama -> minta operator memilih. */
+        function pickScannedItem(names, targetId, rawCode) {
+            const inputOptions = {};
+            names.forEach(n => { inputOptions[n] = stripCode(n); });
+            Swal.fire({
+                title: 'Beberapa Item Cocok',
+                text: 'Kode "' + rawCode + '" cocok dengan ' + names.length + ' item. Pilih salah satu:',
+                input: 'select', inputOptions: inputOptions, inputValue: names[0],
+                showCancelButton: true, confirmButtonText: 'Pilih', cancelButtonText: 'Batal',
+                confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
+                background: 'var(--surface)', color: 'var(--text)'
+            }).then(r => { if (r.isConfirmed && r.value) applyScanToTarget(targetId, r.value, rawCode); });
+        }
+
+        /** Satu pintu untuk semua hasil scan (kamera maupun scanner alat). */
+        function handleScannedCode(code, fromCamera) {
+            const raw = (code || '').toString().trim();
+            if (!raw) return;
+
+            const now = Date.now();
+            // Kamera membaca berkali-kali per detik -> tahan kode yang sama.
+            if (fromCamera && raw === _lastScanCode && (now - _lastScanAt) < 1800) return;
+            _lastScanCode = raw;
+            _lastScanAt   = now;
+
+            const res = resolveScannedCode(raw);
+
+            if (res.status === 'none') {
+                scanBeep(false);
+                setScanStatus('none', raw);      // jendela scan tetap terbuka
+                return;
+            }
+
+            scanBeep(true);
+            const targetId = _scanTargetId;
+            closeScanner();
+            if (res.status === 'multi') pickScannedItem(res.names, targetId, raw);
+            else applyScanToTarget(targetId, res.names[0], raw);
+        }
+
+        function useRawScanKeyword() {
+            const raw      = _lastScanCode;
+            const targetId = _scanTargetId;
+            closeScanner();
+            if (raw) applyScanToTarget(targetId, null, raw);
+        }
+
+        // ---------------- Jendela scan ----------------
+
+        function setScanStatus(kind, code) {
+            const box = document.getElementById('scan-status');
+            if (!box) return;
+            if (kind === 'none') {
+                box.className = 'scan-status warn';
+                box.innerHTML = '<i class="ph ph-warning-circle"></i>' +
+                    '<span style="flex:1;">Kode <b>' + _escHtml(code) + '</b> tidak cocok dengan item mana pun.</span>' +
+                    '<button type="button" class="btn-scan-chip" onclick="useRawScanKeyword()">' +
+                    '<i class="ph ph-magnifying-glass"></i> Pakai sebagai kata kunci</button>';
+                return;
+            }
+            box.className = 'scan-status';
+            box.innerHTML = '<i class="ph ph-target"></i> <span>Arahkan barcode ke dalam bingkai&hellip;</span>';
+        }
+
+        function setScanCamMessage(html) {
+            const el = document.getElementById('scan-cam-msg');
+            const stage = document.getElementById('scan-stage');
+            if (!el) return;
+            if (!html) {
+                el.classList.remove('show'); el.innerHTML = '';
+                if (stage) stage.classList.remove('has-msg');
+                return;
+            }
+            el.innerHTML = html;
+            el.classList.add('show');
+            if (stage) stage.classList.add('has-msg');   // bingkai pemindai disembunyikan
+        }
+
+        function openScanner(targetId) {
+            const t = SCAN_TARGETS[targetId];
+            if (!t) return;
+
+            _scanTargetId = targetId;
+            _lastScanCode = '';
+            _lastScanAt   = 0;
+            buildScanIndex();
+
+            const lbl = document.getElementById('scan-target-label');
+            if (lbl) lbl.textContent = t.label;
+            const note = document.getElementById('scan-engine-note');
+            if (note) note.textContent = '';
+
+            setScanStatus('scanning');
+            setScanCamMessage('');
+            document.getElementById('scan-modal').classList.add('show');
+
+            const manual = document.getElementById('scan-manual');
+            if (manual) {
+                manual.value = '';
+                // Scanner alat (HID) mengetik ke kolom ini, jadi harus selalu fokus.
+                setTimeout(() => { try { manual.focus(); } catch (e) {} }, 120);
+            }
+
+            startCameraScan();
+        }
+
+        function closeScanner() {
+            stopCameraScan();
+            const m = document.getElementById('scan-modal');
+            if (m) m.classList.remove('show');
+        }
+
+        function submitManualScan() {
+            const el = document.getElementById('scan-manual');
+            if (!el) return;
+            const val = el.value.trim();
+            el.value = '';
+            if (val) handleScannedCode(val, false);
+            try { el.focus(); } catch (e) {}
+        }
+
+        // ---------------- Kamera ----------------
+
+        function cameraErrorText(err) {
+            const name = (err && err.name) ? err.name : '';
+            if (name === 'NotAllowedError' || name === 'SecurityError') {
+                return '<i class="ph ph-lock-key"></i><div><b>Akses kamera ditolak.</b><br>' +
+                       'Izinkan kamera pada browser, lalu buka ulang jendela ini. ' +
+                       'Bila aplikasi ditampilkan di dalam frame (embed), buka lewat URL web app langsung.<br>' +
+                       'Scanner alat &amp; input manual di bawah tetap bisa dipakai.</div>';
+            }
+            if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+                return '<i class="ph ph-camera-slash"></i><div><b>Kamera tidak ditemukan.</b><br>' +
+                       'Gunakan scanner alat atau ketik kode di bawah.</div>';
+            }
+            if (name === 'NotReadableError') {
+                return '<i class="ph ph-camera-slash"></i><div><b>Kamera sedang dipakai aplikasi lain.</b><br>' +
+                       'Tutup aplikasi tersebut lalu coba lagi.</div>';
+            }
+            return '<i class="ph ph-camera-slash"></i><div><b>Kamera tidak dapat dibuka.</b><br>' +
+                   'Gunakan scanner alat atau ketik kode di bawah.</div>';
+        }
+
+        async function startCameraScan(deviceId) {
+            const stage = document.getElementById('scan-stage');
+            const video = document.getElementById('scan-video');
+            if (!stage || !video) return;
+
+            setScanCamMessage('');
+
+            if (!window.isSecureContext && location.protocol !== 'https:') {
+                setScanCamMessage('<i class="ph ph-lock-key"></i><div><b>Kamera butuh koneksi HTTPS.</b><br>' +
+                                  'Gunakan scanner alat atau ketik kode di bawah.</div>');
+                return;
+            }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                setScanCamMessage('<i class="ph ph-camera-slash"></i><div><b>Browser ini tidak mendukung kamera.</b><br>' +
+                                  'Gunakan scanner alat atau ketik kode di bawah.</div>');
+                return;
+            }
+
+            try {
+                const constraints = deviceId
+                    ? { video: { deviceId: { exact: deviceId } } }
+                    : { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+                _scanStream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (err) {
+                console.error(err);
+                setScanCamMessage(cameraErrorText(err));
+                return;
+            }
+
+            _scanTrack = _scanStream.getVideoTracks()[0] || null;
+            video.srcObject = _scanStream;
+            try { await video.play(); } catch (e) {}
+            stage.classList.add('live');
+
+            populateCameraList();
+            setupTorchButton();
+            startDecodeEngine(video);
+        }
+
+        function stopCameraScan() {
+            if (_scanLoopId) { clearInterval(_scanLoopId); _scanLoopId = null; }
+            _scanDetector = null;
+            if (_zxingReader) { try { _zxingReader.reset(); } catch (e) {} _zxingReader = null; }
+            if (_scanStream) {
+                try { _scanStream.getTracks().forEach(tr => tr.stop()); } catch (e) {}
+                _scanStream = null;
+            }
+            _scanTrack = null;
+
+            const video = document.getElementById('scan-video');
+            if (video) { try { video.pause(); } catch (e) {} video.srcObject = null; }
+            const stage = document.getElementById('scan-stage');
+            if (stage) stage.classList.remove('live');
+            const torch = document.getElementById('scan-torch');
+            if (torch) { torch.classList.remove('on'); torch.style.display = 'none'; }
+        }
+
+        /** Mesin decode: BarcodeDetector bawaan browser dulu, ZXing sebagai cadangan. */
+        async function startDecodeEngine(video) {
+            const note = document.getElementById('scan-engine-note');
+
+            if ('BarcodeDetector' in window) {
+                try {
+                    let formats = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','code_93','itf','codabar','qr_code','data_matrix'];
+                    try {
+                        const sup = await window.BarcodeDetector.getSupportedFormats();
+                        if (sup && sup.length) {
+                            const f = formats.filter(x => sup.indexOf(x) > -1);
+                            if (f.length) formats = f;
+                        }
+                    } catch (e) {}
+                    _scanDetector = new window.BarcodeDetector({ formats: formats });
+                    if (note) note.textContent = 'Mesin scan: BarcodeDetector (browser)';
+                    _scanLoopId = setInterval(async () => {
+                        if (!_scanDetector || !video || video.readyState < 2) return;
+                        try {
+                            const codes = await _scanDetector.detect(video);
+                            if (codes && codes.length && codes[0].rawValue) handleScannedCode(codes[0].rawValue, true);
+                        } catch (e) {}
+                    }, 200);
+                    return;
+                } catch (e) { _scanDetector = null; console.error(e); }
+            }
+
+            try {
+                await loadZXingLibrary();
+                _zxingReader = new ZXing.BrowserMultiFormatReader();
+                if (note) note.textContent = 'Mesin scan: ZXing';
+                const cb = (result) => { if (result && result.getText) handleScannedCode(result.getText(), true); };
+                if (typeof _zxingReader.decodeFromStream === 'function' && _scanStream) {
+                    _zxingReader.decodeFromStream(_scanStream, video, cb);
+                } else if (typeof _zxingReader.decodeFromVideoElement === 'function') {
+                    _zxingReader.decodeFromVideoElement(video, cb);
+                } else {
+                    throw new Error('ZXing tidak mendukung mode stream.');
+                }
+            } catch (e) {
+                console.error(e);
+                if (note) note.textContent = 'Mesin scan kamera tidak tersedia';
+                setScanCamMessage('<i class="ph ph-wifi-slash"></i><div><b>Pemindai kamera gagal dimuat.</b><br>' +
+                                  'Gunakan scanner alat atau ketik kode di bawah.</div>');
+            }
+        }
+
+        /** ZXing hanya diunduh saat benar-benar dibutuhkan (tidak membebani start-up). */
+        function loadZXingLibrary() {
+            if (window.ZXing && window.ZXing.BrowserMultiFormatReader) return Promise.resolve();
+            if (_zxingLoading) return _zxingLoading;
+
+            const urls = [
+                'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js',
+                'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js'
+            ];
+            _zxingLoading = new Promise((resolve, reject) => {
+                let i = 0;
+                const tryNext = () => {
+                    if (i >= urls.length) { _zxingLoading = null; reject(new Error('ZXing gagal dimuat')); return; }
+                    const sc = document.createElement('script');
+                    sc.src   = urls[i++];
+                    sc.async = true;
+                    sc.onload  = () => (window.ZXing && window.ZXing.BrowserMultiFormatReader) ? resolve() : tryNext();
+                    sc.onerror = tryNext;
+                    document.head.appendChild(sc);
+                };
+                tryNext();
+            });
+            return _zxingLoading;
+        }
+
+        async function populateCameraList() {
+            const sel = document.getElementById('scan-camera');
+            if (!sel || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+            try {
+                const devs = await navigator.mediaDevices.enumerateDevices();
+                const cams = devs.filter(d => d.kind === 'videoinput');
+                if (cams.length < 2) { sel.style.display = 'none'; return; }
+
+                let activeId = '';
+                try { activeId = (_scanTrack && _scanTrack.getSettings) ? (_scanTrack.getSettings().deviceId || '') : ''; } catch (e) {}
+
+                sel.innerHTML = cams.map((c, i) =>
+                    '<option value="' + _escHtml(c.deviceId) + '"' + (c.deviceId === activeId ? ' selected' : '') + '>' +
+                    _escHtml(c.label || ('Kamera ' + (i + 1))) + '</option>'
+                ).join('');
+                sel.style.display = '';
+            } catch (e) { console.error(e); }
+        }
+
+        function switchScanCamera(deviceId) {
+            if (!deviceId) return;
+            stopCameraScan();
+            startCameraScan(deviceId);
+        }
+
+        function setupTorchButton() {
+            const btn = document.getElementById('scan-torch');
+            if (!btn) return;
+            btn.classList.remove('on');
+            let ok = false;
+            try {
+                const caps = (_scanTrack && _scanTrack.getCapabilities) ? _scanTrack.getCapabilities() : null;
+                ok = !!(caps && caps.torch);
+            } catch (e) { ok = false; }
+            btn.style.display = ok ? 'inline-flex' : 'none';
+        }
+
+        function toggleScanTorch() {
+            const btn = document.getElementById('scan-torch');
+            if (!btn || !_scanTrack) return;
+            const on = !btn.classList.contains('on');
+            try {
+                _scanTrack.applyConstraints({ advanced: [{ torch: on }] })
+                    .then(() => btn.classList.toggle('on', on))
+                    .catch(e => console.error(e));
+            } catch (e) { console.error(e); }
+        }
+
+        /** Umpan balik suara + getar, seperti scanner kasir. */
+        function scanBeep(ok) {
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (AC) {
+                    if (!_scanAudioCtx) _scanAudioCtx = new AC();
+                    if (_scanAudioCtx.state === 'suspended') _scanAudioCtx.resume();
+                    const osc  = _scanAudioCtx.createOscillator();
+                    const gain = _scanAudioCtx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.value = ok ? 1180 : 320;
+                    gain.gain.value = 0.05;
+                    osc.connect(gain); gain.connect(_scanAudioCtx.destination);
+                    const t0 = _scanAudioCtx.currentTime;
+                    osc.start(t0); osc.stop(t0 + (ok ? 0.09 : 0.22));
+                }
+            } catch (e) {}
+            try { if (navigator.vibrate) navigator.vibrate(ok ? 40 : [30, 40, 30]); } catch (e) {}
+        }
+
+        // ESC menutup jendela scan (kamera ikut dimatikan).
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const m = document.getElementById('scan-modal');
+            if (m && m.classList.contains('show')) closeScanner();
+        });
+
+        // Klik area gelap di luar kotak = tutup.
+        document.addEventListener('DOMContentLoaded', () => {
+            const m = document.getElementById('scan-modal');
+            if (m) m.addEventListener('click', (e) => { if (e.target === m) closeScanner(); });
+        });
+
+        // Kamera tidak boleh tetap menyala saat tab disembunyikan / halaman ditutup.
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                const m = document.getElementById('scan-modal');
+                if (m && m.classList.contains('show')) stopCameraScan();
+            }
+        });
+        window.addEventListener('pagehide', stopCameraScan);
+    </script>
+</body>
+</html>
