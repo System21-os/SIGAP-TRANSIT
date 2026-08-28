@@ -13,6 +13,48 @@
     <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script>
+  // 1. MASUKKAN URL WEB APP BAPAK DI SINI
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec";
+
+  // 2. FUNGSI PROXY: Mengubah otomatis google.script.run menjadi fetch()
+  window.google = {
+    script: {
+      get run() {
+        let successCb = null;
+        let failureCb = null;
+
+        return new Proxy({}, {
+          get: function(target, prop) {
+            // Tangkap handler sukses
+            if (prop === 'withSuccessHandler') {
+              return function(cb) { successCb = cb; return this; };
+            }
+            // Tangkap handler error
+            if (prop === 'withFailureHandler') {
+              return function(cb) { failureCb = cb; return this; };
+            }
+            // Kirim request ke backend Code.gs
+            return function(payload) {
+              fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Wajib text/plain untuk bypass CORS Apps Script
+                body: JSON.stringify({ action: prop, data: payload || {} })
+              })
+              .then(res => res.json())
+              .then(data => {
+                if (successCb) successCb(data);
+              })
+              .catch(err => {
+                if (failureCb) failureCb(err);
+              });
+            };
+          }
+        });
+      }
+    }
+  };
+</script>
 
     <style>
         :root {
