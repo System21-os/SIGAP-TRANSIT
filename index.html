@@ -528,6 +528,246 @@
             .data-table tbody tr { page-break-inside:avoid; }
             .grp-laporan-print { display:table-row !important; }
         }
+
+        /* =====================================================================
+           EXP MONITOR — MONITORING TANGGAL EXPIRED
+           Halaman baru: kalender exp + tabel per bulan + panel detail tanggal.
+           Seluruh gaya di bawah HANYA berlaku di dalam #tab-exp / modal alert,
+           jadi tidak ada satu pun tampilan halaman lama yang berubah.
+           ===================================================================== */
+        #tab-exp, #exp-alert-modal, #exp-bell {
+            --accent-brd: rgba(15, 118, 110, 0.25);
+            --accent-soft2: rgba(15, 118, 110, 0.14);
+            --purple: #6d28d9;
+            --purple-soft: #f5f3ff;
+            --r-full: 99px;
+            --ease: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Kalender & panel detail berdampingan di layar lebar. Panel detail yang
+           display:none diabaikan grid -> kalender otomatis melebar penuh. */
+        .exp-duo { display:grid; grid-template-columns:1fr; gap:16px; align-items:start; }
+        @media (min-width: 1100px) {
+            .exp-duo { grid-template-columns:repeat(auto-fit, minmax(440px, 1fr)); }
+            /* Mode tabel butuh lebar penuh (7 kolom): panel detail turun ke bawah. */
+            .exp-duo.table-mode { grid-template-columns:1fr; }
+        }
+
+        /* Pill alert ringkas — klik untuk membuka rincian batch mendesak */
+        .exp-alert-pill {
+            display:flex; align-items:center; gap:10px; width:100%;
+            background:var(--amber-soft); border:1.5px solid rgba(180, 83, 9, 0.35);
+            border-radius:var(--r-full); padding:9px 16px; cursor:pointer;
+            font-family:'Sora', sans-serif; font-size:var(--fs-sm); font-weight:700; color:var(--amber);
+            transition:transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+        }
+        .exp-alert-pill:hover { transform:translateY(-1px); box-shadow:0 4px 14px rgba(180, 83, 9, 0.18); }
+        .exp-alert-pill i { font-size:1.15rem; flex-shrink:0; }
+        .exp-alert-pill .pill-cta { margin-left:auto; font-size:var(--fs-eyebrow); font-weight:800; letter-spacing:0.04em; text-transform:uppercase; opacity:0.85; white-space:nowrap; }
+
+        /* Lonceng alert di header */
+        #exp-bell {
+            position:relative; display:none; align-items:center; justify-content:center;
+            width:38px; height:38px; border-radius:11px; cursor:pointer;
+            background:var(--amber-soft); border:1px solid rgba(180, 83, 9, 0.3);
+            color:var(--amber); font-size:1.15rem; transition:all 0.2s var(--ease);
+        }
+        #exp-bell:hover { transform:translateY(-1px); box-shadow:0 4px 14px rgba(180, 83, 9, 0.2); }
+        #exp-bell-count {
+            position:absolute; top:-6px; right:-6px; background:var(--red); color:#fff;
+            font-size:0.62rem; font-weight:800; border-radius:99px; min-width:18px; height:18px;
+            display:flex; align-items:center; justify-content:center; padding:0 4px; border:2px solid var(--surface);
+        }
+
+        /* Chip hasil pencarian exp — tanggal yang memuat batch cocok */
+        .exp-hit-chip {
+            display:inline-flex; align-items:center; gap:6px; padding:6px 12px;
+            border-radius:var(--r-full); font-size:var(--fs-xs); font-weight:700;
+            background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-brd);
+            cursor:pointer; transition:transform 0.15s var(--ease), background 0.15s var(--ease);
+        }
+        .exp-hit-chip:hover { transform:translateY(-1px); background:var(--accent-soft2); }
+
+        /* ---------- KALENDER ---------- */
+        .cal-nav-btn {
+            display:flex; align-items:center; justify-content:center;
+            width:36px; height:36px; border-radius:10px;
+            background:var(--surface); border:1px solid var(--border);
+            color:var(--text-muted); cursor:pointer; transition:all 0.2s var(--ease); font-size:1.1rem;
+        }
+        .cal-nav-btn:hover { color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
+        .cal-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:6px; }
+        .cal-dow {
+            text-align:center; font-size:var(--fs-eyebrow); font-weight:800; color:var(--text-dim);
+            text-transform:uppercase; letter-spacing:0.06em; padding:6px 0;
+        }
+        .cal-day {
+            position:relative; min-height:72px; border-radius:10px;
+            background:var(--surface); border:1px solid var(--border);
+            padding:6px; cursor:default; transition:all 0.15s var(--ease);
+            display:flex; flex-direction:column; gap:3px; overflow:hidden;
+        }
+        .cal-day.other-month { opacity:0.35; background:transparent; border-style:dashed; }
+        .cal-day.today { border:2px solid var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+        .cal-day.has-items { cursor:pointer; }
+        .cal-day.has-items:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(36,29,24,0.08); border-color:var(--accent); }
+        .cal-day.selected { border:2px solid var(--accent); background:var(--accent-soft); }
+        .cal-day-num { font-size:0.8rem; font-weight:700; color:var(--text-muted); line-height:1; font-variant-numeric:tabular-nums; }
+        .cal-day.today .cal-day-num { color:var(--accent); }
+        .cal-chip {
+            font-size:0.62rem; font-weight:800; border-radius:6px; padding:2px 5px;
+            line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .cal-chip-expired { background:var(--red-soft);   color:var(--red);   border:1px solid rgba(220, 38, 38, 0.25); }
+        .cal-chip-soon    { background:var(--amber-soft); color:var(--amber); border:1px solid rgba(180, 83, 9, 0.25); }
+        .cal-chip-ok      { background:var(--green-soft); color:var(--green); border:1px solid rgba(21, 128, 61, 0.25); }
+        .cal-chip-done    { background:var(--surface2);   color:var(--text-dim); border:1px solid var(--border); text-decoration:line-through; }
+
+        /* ---------- PEMILIH TAMPILAN: KALENDER / TABEL ---------- */
+        .exp-view-switch { display:inline-flex; background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:3px; gap:3px; }
+        .exp-view-switch button {
+            display:inline-flex; align-items:center; gap:5px; padding:6px 11px; border:none; border-radius:8px;
+            background:transparent; color:var(--text-muted); font-family:'Sora', sans-serif; font-size:var(--fs-xs);
+            font-weight:700; cursor:pointer; transition:background 0.18s var(--ease), color 0.18s var(--ease);
+        }
+        .exp-view-switch button:hover { color:var(--accent); }
+        .exp-view-switch button.active { background:var(--accent); color:#fff; box-shadow:0 2px 8px var(--accent-glow); }
+        #exp-view-card.mode-table .card-header .cal-chip { display:none; }
+
+        /* ---------- TABEL PER BULAN ---------- */
+        .exp-filterbar {
+            display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px;
+            padding:12px 16px; background:var(--surface2); border-bottom:1px solid var(--border);
+        }
+        .exp-filter-grp { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
+        .exp-filter-lbl {
+            font-size:var(--fs-xs); font-weight:800; line-height:1.2; text-transform:uppercase;
+            letter-spacing:0.08em; color:var(--text-dim); white-space:nowrap;
+        }
+        .exp-filter-ctl { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
+        .exp-year-pill, .exp-period-select, .exp-filter-reset {
+            height:34px; min-height:34px; padding:0 12px; border-radius:var(--r-sm);
+            font-family:'Sora', sans-serif; font-size:0.8rem; font-weight:700; line-height:1;
+        }
+        .exp-year-pill {
+            display:inline-flex; align-items:center; justify-content:center;
+            border:1.5px solid var(--border); background:var(--surface); color:var(--text-muted);
+            cursor:pointer; font-variant-numeric:tabular-nums;
+            transition:color 0.18s var(--ease), border-color 0.18s var(--ease), background 0.18s var(--ease);
+        }
+        .exp-year-pill:hover { border-color:var(--accent); color:var(--accent); }
+        .exp-year-pill.active { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 3px 10px var(--accent-glow); }
+        .exp-period-select {
+            max-width:280px; padding-right:32px; cursor:pointer; outline:none;
+            background-color:var(--surface); color:var(--text); border:1.5px solid var(--border);
+            appearance:none; -webkit-appearance:none;
+            background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%239c8a7b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+            background-repeat:no-repeat; background-position:right 9px center;
+            transition:color 0.18s var(--ease), border-color 0.18s var(--ease), background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+        }
+        .exp-period-select:hover { border-color:var(--border-light); }
+        .exp-period-select:focus-visible { border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft); }
+        .exp-period-select.is-active { border-color:var(--accent); color:var(--accent); background-color:var(--accent-soft); }
+        .exp-filter-reset {
+            display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+            background:var(--surface); border:1.5px solid var(--border); color:var(--text-muted);
+            transition:color 0.18s var(--ease), border-color 0.18s var(--ease), background 0.18s var(--ease);
+        }
+        .exp-filter-reset:hover { color:var(--red); border-color:rgba(220, 38, 38, 0.35); background:var(--red-soft); }
+        .exp-filter-foot { display:flex; align-items:center; gap:8px 12px; flex-wrap:wrap; margin-left:auto; }
+        .exp-table-summary { font-size:var(--fs-xs); font-weight:600; color:var(--text-dim); font-variant-numeric:tabular-nums; }
+        .exp-hidden-note {
+            display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+            font-size:0.68rem; font-weight:700; line-height:1.3;
+            background:var(--surface); border:1px dashed var(--border-light); color:var(--text-dim);
+            border-radius:var(--r-full); padding:4px 10px;
+            transition:color 0.18s var(--ease), border-color 0.18s var(--ease), background 0.18s var(--ease);
+        }
+        .exp-hidden-note:hover { color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
+
+        .emh-chip {
+            font-size:0.62rem; font-weight:800; border-radius:6px; padding:2px 6px; line-height:1.3;
+            white-space:nowrap; background:var(--surface2); color:var(--text-dim); border:1px solid var(--border);
+        }
+        .exp-month-hdr {
+            display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+            padding:10px 16px; cursor:pointer; user-select:none; transition:background 0.2s var(--ease);
+            background:linear-gradient(90deg, var(--accent-soft) 0%, transparent 100%);
+        }
+        .exp-month-hdr:hover { background:var(--accent-soft2); }
+        .exp-month-hdr .emh-title {
+            display:flex; align-items:center; gap:8px; font-size:0.8rem; font-weight:800;
+            color:var(--text); letter-spacing:0.03em; text-transform:uppercase;
+        }
+        .exp-month-hdr.is-now .emh-title { color:var(--accent); }
+        .exp-month-hdr.is-past { background:linear-gradient(90deg, var(--surface2) 0%, transparent 100%); }
+        .exp-month-hdr .emh-meta { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+        .exp-now-tag {
+            font-size:0.62rem; font-weight:800; letter-spacing:0.04em; text-transform:uppercase;
+            background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-brd);
+            border-radius:var(--r-full); padding:2px 8px;
+        }
+        .exp-past-tag {
+            font-size:0.62rem; font-weight:800; letter-spacing:0.04em; text-transform:uppercase;
+            background:var(--surface2); color:var(--text-dim); border:1px solid var(--border-light);
+            border-radius:var(--r-full); padding:2px 8px;
+        }
+        #tab-exp .em-name { font-weight:700; color:var(--text); }
+        #tab-exp .em-name.is-done { text-decoration:line-through; opacity:0.55; }
+        #tab-exp .data-table tbody td.em-sub { font-size:var(--fs-xs); font-weight:500; color:var(--text-muted); }
+        #tab-exp .em-qty { text-align:right; font-weight:700; }
+        #tab-exp .em-mid { text-align:center; }
+        #tab-exp .em-exp-done { font-size:var(--fs-xs); color:var(--text-dim); text-decoration:line-through; }
+        #tab-exp .data-table tbody td.em-empty {
+            text-align:center; padding:32px 16px; font-size:var(--fs-sm); font-weight:500; color:var(--text-dim);
+        }
+        #tab-exp .data-table td.mono { background:transparent; border-radius:0; padding:13px 16px; font-size:var(--fs-xs); color:var(--text-muted); }
+        /* Kolom tidak boleh dipaksa mengecil saat kartu berdampingan dengan
+           panel detail: tabel diberi lebar minimum lalu dibiarkan menggeser
+           mendatar (container-nya sudah overflow-x:auto). */
+        #tab-exp .data-table { min-width:720px; }
+        #tab-exp .data-table thead th { white-space:nowrap; }
+        #tab-exp .em-qty { white-space:nowrap; }
+        #tab-exp .em-qty span { white-space:nowrap; }
+        #tab-exp .data-table tbody tr.group-hdr:hover { background:transparent; }
+        #tab-exp .data-table tbody tr.group-hdr td { padding:0; }
+
+        /* ---------- PANEL DETAIL TANGGAL ---------- */
+        .exp-status-select {
+            background:var(--surface); border:1.5px solid var(--border-light);
+            border-radius:8px; padding:6px 8px; font-family:'Sora', sans-serif;
+            font-size:var(--fs-xs); font-weight:700; color:var(--text); cursor:pointer;
+            outline:none; transition:all 0.2s var(--ease);
+        }
+        .exp-status-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+        .exp-status-select.st-habis    { color:var(--text-dim); border-color:var(--border); background:var(--surface2); }
+        .exp-status-select.st-tidakada { color:var(--red);      border-color:rgba(220, 38, 38, 0.4); background:var(--red-soft); }
+        .exp-status-select.st-retur    { color:var(--purple);   border-color:rgba(109, 40, 217, 0.4); background:var(--purple-soft); }
+
+        /* Kartu ringkasan exp bisa diklik untuk memfilter daftar */
+        #tab-exp .stat-card.is-clickable { cursor:pointer; transition:transform 0.18s var(--ease), box-shadow 0.18s var(--ease); }
+        #tab-exp .stat-card.is-clickable:hover { transform:translateY(-2px); box-shadow:var(--shadow-md); }
+        #tab-exp .stat-card.done::before { background:var(--text-dim); }
+
+        /* Modal alert exp */
+        #exp-alert-modal {
+            display:none; position:fixed; inset:0; background:rgba(36, 29, 24, 0.55);
+            backdrop-filter:blur(8px); z-index:9994; align-items:center; justify-content:center; padding:1rem;
+        }
+        #exp-alert-modal.show { display:flex; }
+
+        @media (max-width:640px) {
+            .exp-filterbar { gap:8px 12px; padding:12px; }
+            .exp-filter-grp { width:100%; }
+            .exp-filter-ctl { flex:1 1 auto; }
+            .exp-filter-foot { margin-left:0; width:100%; }
+            .exp-period-select { flex:1 1 auto; max-width:none; }
+            .cal-day { min-height:58px; padding:4px; }
+            .cal-grid { gap:4px; }
+            /* Sel kalender terlalu sempit untuk teks penuh -> cukup angkanya. */
+            .cal-chip-word { display:none; }
+        }
+
     </style>
 </head>
 <body>
@@ -573,6 +813,28 @@
         </div>
     </div>
 
+    <!-- ALERT EXPIRED MODAL -->
+    <div id="exp-alert-modal">
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--r-xl); width:100%; max-width:560px; max-height:82dvh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-lg);">
+            <div class="card-header" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <i class="ph-fill ph-warning-circle" style="color:var(--amber); font-size:1.3rem;"></i>
+                    <span style="font-size:var(--fs-h2); font-weight:800; color:var(--text);">Alert Expired · <span id="exp-alert-modal-count" style="color:var(--amber);">0</span> batch</span>
+                </div>
+                <button onclick="closeExpAlertModal()" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:6px; border-radius:8px; font-size:1.3rem;">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <div id="exp-alert-modal-body" style="overflow-y:auto; flex:1; padding:14px 20px;"></div>
+            <div style="padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end;">
+                <button onclick="closeExpAlertModal()" class="btn-ghost">Tutup</button>
+                <button onclick="expAlertGoMonitor()" class="btn-primary" style="padding:10px 18px; font-size:var(--fs-sm);">
+                    <i class="ph ph-calendar-check"></i> Buka Exp Monitor
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- MAIN BRAND HEADER -->
     <header>
         <div style="max-width:1180px; margin:0 auto; padding:0 20px; display:flex; align-items:center; height:70px; gap:14px;">
@@ -585,8 +847,13 @@
                 <p class="eyebrow" style="margin:2px 0 0;">Warehouse Inventory System</p>
             </div>
             <!-- Indikator background hydration: TIDAK menutup layar -->
-            <div style="margin-left:auto;">
+            <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
                 <span id="sync-pill"><span class="dot"></span><span id="sync-pill-text">Menyinkronkan…</span></span>
+                <!-- Lonceng alert exp: muncul hanya bila ada batch exp hari ini / ≤ 7 hari -->
+                <button id="exp-bell" onclick="openExpAlerts()" title="Alert barang expired hari ini &amp; 7 hari ke depan">
+                    <i class="ph ph-bell"></i>
+                    <span id="exp-bell-count">0</span>
+                </button>
             </div>
         </div>
         <div style="max-width:1180px; margin:0 auto; padding:0 20px;">
@@ -602,6 +869,9 @@
                 </button>
                 <button class="tab-btn" id="btn-tab-stock" onclick="switchTab('tab-stock')">
                     <i class="ph ph-chart-bar" style="font-size:1.05rem;"></i> Kartu Stock
+                </button>
+                <button class="tab-btn" id="btn-tab-exp" onclick="switchTab('tab-exp')">
+                    <i class="ph ph-calendar-check" style="font-size:1.05rem;"></i> Exp Monitor
                 </button>
                 <button class="tab-btn" id="btn-tab-opname" onclick="switchTab('tab-opname')">
                     <i class="ph ph-clipboard-text" style="font-size:1.05rem;"></i> Stock Opname
@@ -845,6 +1115,178 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <!-- ===================== TAB EXP MONITOR ===================== -->
+        <div id="tab-exp" class="tab-content">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+
+                <!-- RINGKASAN & PENCARIAN -->
+                <div class="card">
+                    <div class="card-header">
+                        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                            <div>
+                                <span class="eyebrow">Kendali Kedaluwarsa</span>
+                                <h2 class="section-title" style="margin-top:4px;">
+                                    <i class="ph ph-calendar-check" style="color:var(--accent); font-size:1.15rem;"></i> Monitoring Expired Date
+                                </h2>
+                                <p class="section-sub">Bersumber dari Exp Date pada Data Masuk · penandaan manual tidak mengubah database</p>
+                            </div>
+                            <button onclick="loadExpData(null, { force: true, blocking: true })" class="btn-primary" style="padding:9px 16px; font-size:var(--fs-sm);" title="Ambil ulang dari sheet, termasuk perubahan terbaru pada Sheet EXP">
+                                <i class="ph ph-arrows-clockwise"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div style="padding:16px 20px; display:flex; flex-direction:column; gap:14px;">
+                        <div id="exp-alert-banner" style="display:none;"></div>
+                        <div class="stat-grid">
+                            <div class="stat-card neg is-clickable" onclick="showExpCategory('expired')" title="Klik untuk melihat daftarnya">
+                                <div class="stat-label"><i class="ph ph-calendar-x"></i> Sudah Expired</div>
+                                <div class="stat-value" id="exp-stat-expired" style="color:var(--red);">0</div>
+                                <div class="stat-hint">batch perlu tindakan · klik untuk detail</div>
+                            </div>
+                            <div class="stat-card warn is-clickable" onclick="showExpCategory('week')" title="Klik untuk melihat daftarnya">
+                                <div class="stat-label"><i class="ph ph-hourglass-medium"></i> &le; 7 Hari Lagi</div>
+                                <div class="stat-value" id="exp-stat-week" style="color:var(--amber);">0</div>
+                                <div class="stat-hint">segera habiskan / FIFO · klik untuk detail</div>
+                            </div>
+                            <div class="stat-card net is-clickable" onclick="showExpCategory('month')" title="Klik untuk melihat daftarnya">
+                                <div class="stat-label"><i class="ph ph-calendar-dots"></i> &le; 30 Hari Lagi</div>
+                                <div class="stat-value" id="exp-stat-month" style="color:var(--blue);">0</div>
+                                <div class="stat-hint">pantau bulan ini · klik untuk detail</div>
+                            </div>
+                            <div class="stat-card done is-clickable" onclick="showExpCategory('done')" title="Klik untuk melihat daftarnya">
+                                <div class="stat-label"><i class="ph ph-check-circle"></i> Ditandai Selesai</div>
+                                <div class="stat-value" id="exp-stat-done" style="color:var(--text-dim);">0</div>
+                                <div class="stat-hint">habis / tidak ada / retur · klik untuk detail</div>
+                            </div>
+                        </div>
+                        <div style="position:relative;">
+                            <i class="ph ph-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none;"></i>
+                            <input type="text" id="filter-exp-name" placeholder="Cari nama item exp..." class="inp" style="padding-left:36px; padding-right:44px;" oninput="_debouncedFilterExp()">
+                            <button type="button" class="btn-scan-inline" onclick="openScanner('filter-exp-name')" title="Scan barcode item"><i class="ph ph-barcode"></i></button>
+                        </div>
+                        <div id="exp-search-results" style="display:none;"></div>
+                    </div>
+                </div>
+
+                <div class="exp-duo" id="exp-duo">
+                    <!-- KALENDER / TABEL -->
+                    <div class="card" id="exp-view-card">
+                        <div class="card-header">
+                            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                                <h2 id="exp-tbl-nav" style="display:none; align-items:center; gap:8px; font-size:var(--fs-h2); font-weight:800; color:var(--text); margin:0;">
+                                    <i class="ph ph-list-bullets" style="color:var(--accent);"></i> Daftar Expired per Bulan
+                                </h2>
+                                <div style="display:flex; align-items:center; gap:10px;" id="exp-cal-nav">
+                                    <button class="cal-nav-btn" onclick="calShiftMonth(-1)" title="Bulan sebelumnya"><i class="ph ph-caret-left"></i></button>
+                                    <h2 id="cal-month-label" style="font-size:var(--fs-h2); font-weight:800; color:var(--text); margin:0; min-width:150px; text-align:center;"></h2>
+                                    <button class="cal-nav-btn" onclick="calShiftMonth(1)" title="Bulan berikutnya"><i class="ph ph-caret-right"></i></button>
+                                    <button onclick="calGoToday()" class="btn-ghost" style="font-size:var(--fs-xs); padding:7px 12px;">Hari Ini</button>
+                                </div>
+                                <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                                    <div class="exp-view-switch" role="group" aria-label="Tampilan Exp Monitor">
+                                        <button type="button" id="exp-view-btn-calendar" class="active" onclick="setExpView('calendar')"><i class="ph ph-calendar-blank"></i> Kalender</button>
+                                        <button type="button" id="exp-view-btn-table" onclick="setExpView('table')"><i class="ph ph-list-bullets"></i> Tabel</button>
+                                    </div>
+                                    <span class="cal-chip cal-chip-expired">Expired</span>
+                                    <span class="cal-chip cal-chip-soon">&le; 7 hari</span>
+                                    <span class="cal-chip cal-chip-ok">&gt; 7 hari</span>
+                                    <span class="cal-chip cal-chip-done">Selesai</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="padding:14px 16px;" id="exp-cal-view">
+                            <div class="cal-grid" id="cal-dow-row"></div>
+                            <div class="cal-grid" id="cal-grid" style="margin-top:6px;"></div>
+                        </div>
+
+                        <!-- TAMPILAN TABEL — dikelompokkan per BULAN TAHUN -->
+                        <div id="exp-table-view" style="display:none;">
+                            <div class="exp-filterbar">
+                                <div class="exp-filter-grp">
+                                    <span class="exp-filter-lbl">Tahun</span>
+                                    <div id="exp-year-pills" class="exp-filter-ctl"></div>
+                                </div>
+                                <div class="exp-filter-grp">
+                                    <span class="exp-filter-lbl">Periode</span>
+                                    <div class="exp-filter-ctl">
+                                        <select id="exp-period-select" class="exp-period-select" onchange="setExpTblPeriode(this.value)" aria-label="Filter periode bulan"></select>
+                                        <button type="button" id="exp-filter-reset" class="exp-filter-reset" onclick="resetExpTblFilter()" style="display:none;" title="Kembalikan filter periode ke awal">
+                                            <i class="ph ph-arrow-counter-clockwise"></i> Reset
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="exp-filter-foot">
+                                    <span id="exp-hidden-note" class="exp-hidden-note" style="display:none;" onclick="_expFocusPeriod()" title="Pilih bulan di filter Periode untuk membukanya"></span>
+                                    <span id="exp-table-summary" class="exp-table-summary"></span>
+                                </div>
+                            </div>
+                            <div style="overflow-x:auto; max-height:620px; overflow-y:auto;">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Nama Item</th>
+                                            <th>Exp Date</th>
+                                            <th style="text-align:center;">Sisa Hari</th>
+                                            <th>Tgl Masuk</th>
+                                            <th>ALT UOM</th>
+                                            <th style="text-align:right;">QTY</th>
+                                            <th style="text-align:center;">Status Barang</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="exp-month-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PANEL DETAIL TANGGAL / KATEGORI -->
+                    <div class="card" id="exp-day-panel" style="display:none;">
+                        <div class="card-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                            <h2 style="font-size:var(--fs-h2); font-weight:800; color:var(--text); margin:0; display:flex; align-items:center; gap:8px;">
+                                <i class="ph ph-list-magnifying-glass" style="color:var(--accent);"></i>
+                                <span id="exp-day-label" style="color:var(--accent);"></span>
+                            </h2>
+                            <span id="exp-day-count" class="badge-count">0 batch</span>
+                        </div>
+                        <div style="overflow-x:auto; max-height:520px; overflow-y:auto;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:36px; text-align:center;"><input type="checkbox" id="exp-check-all" onchange="toggleExpCheckAll(this)" style="width:16px; height:16px; cursor:pointer; accent-color:var(--accent);"></th>
+                                        <th>Nama Item</th>
+                                        <th>Exp Date</th>
+                                        <th>Tgl Masuk</th>
+                                        <th>ALT UOM</th>
+                                        <th style="text-align:right;">QTY</th>
+                                        <th style="text-align:center; color:var(--accent);">Status Barang</th>
+                                        <th>Terakhir Update</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exp-day-tbody"></tbody>
+                            </table>
+                        </div>
+                        <div id="exp-bulk-bar" style="display:none; padding:12px 20px; border-top:1px solid var(--border); background:var(--accent-soft); align-items:center; gap:12px; flex-wrap:wrap; justify-content:space-between;">
+                            <span style="font-size:var(--fs-sm); font-weight:700; color:var(--accent);">
+                                <i class="ph ph-check-square"></i> <span id="exp-bulk-count">0</span> item dipilih
+                            </span>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <select id="exp-bulk-status" class="inp" style="width:auto; padding:8px 12px; cursor:pointer;">
+                                    <option value="HABIS">Habis Terpakai</option>
+                                    <option value="TIDAK ADA">Tidak Ada / Hilang</option>
+                                    <option value="RETUR">Retur / Dibuang</option>
+                                    <option value="AKTIF">Masih Ada (reset)</option>
+                                </select>
+                                <button onclick="applyBulkExpStatus()" class="btn-primary" style="padding:9px 18px; font-size:var(--fs-sm);">
+                                    <i class="ph ph-floppy-disk"></i> Simpan Status Terpilih
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div><!-- /.exp-duo -->
             </div>
         </div>
 
@@ -1097,6 +1539,20 @@
                 <div id="scan-status" class="scan-status">
                     <i class="ph ph-target"></i> <span>Arahkan barcode ke dalam bingkai&hellip;</span>
                 </div>
+                <div>
+                    <label class="lbl">Scanner Alat / Ketik Kode Manual</label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="scan-manual" class="inp" autocomplete="off" autocorrect="off" spellcheck="false"
+                            placeholder="Tembak barcode atau ketik kode, lalu Enter"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault();submitManualScan();}">
+                        <button type="button" class="btn-primary" style="padding:10px 16px;" onclick="submitManualScan()" title="Cari kode">
+                            <i class="ph ph-magnifying-glass" style="font-size:1.1rem;"></i>
+                        </button>
+                    </div>
+                    <p class="scan-hint">
+                        Scanner USB / Bluetooth (barcode gun) langsung bekerja &mdash; cukup ditembakkan selagi jendela ini terbuka.
+                    </p>
+                </div>
             </div>
 
             <div style="padding:12px 16px; border-top:1px solid var(--border); background:var(--surface2); display:flex; align-items:center; justify-content:space-between; gap:10px;">
@@ -1107,11 +1563,6 @@
     </div>
 
     <script>
-        // ===================== KONFIGURASI API (UNTUK GITHUB PAGES) =====================
-        // Jika dihosting di GitHub Pages, isi URL Web App Apps Script Anda di bawah ini.
-        // Jika dijalankan langsung di Google Apps Script (HTML Service), biarkan apa adanya.
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec"; // Contoh: "https://script.google.com/macros/s/AKfycbx.../exec"
-
         // ===================== GLOBAL STATE =====================
         let masterItems      = [];
         let tomSelectInstance = null;
@@ -1156,6 +1607,74 @@
             for (const s of rows) _sisaIndex.set(s.namaItem, s._sisa);
         }
 
+        // ===================== BOOSTER: CACHE LOG KARTU STOCK =====================
+        // Membuka log item yang sama berulang kali (pola paling sering saat
+        // menelusuri kartu stock) tidak perlu menunggu server lagi: hasil yang
+        // sudah pernah diterima disimpan per (item + periode). Cache ini dibuang
+        // begitu ada transaksi baru / edit / opname, jadi tidak mungkin
+        // menampilkan angka basi.
+        const _logCache = new Map();          // 'item|start|end' -> array log
+        const _logPrefetching = new Set();    // permintaan prefetch yang sedang jalan
+        let _logPrefetchBudget = 60;          // batas prefetch per sesi (hemat kuota Apps Script)
+        let _logHoverTimer = null;
+
+        function _logCacheKey(itemName, startDate, endDate) {
+            return itemName + '|' + (startDate || '') + '|' + (endDate || '');
+        }
+
+        function invalidateLogCache() {
+            _logCache.clear();
+            _logPrefetching.clear();
+        }
+
+        /**
+         * Ambil log satu item. Dipakai bersama oleh modal detail dan prefetch.
+         * @return {boolean} true bila datanya sudah ada di cache (tanpa request).
+         */
+        function fetchItemLog(itemName, startDate, endDate, opt) {
+            opt = opt || {};
+            const key = _logCacheKey(itemName, startDate, endDate);
+            const hit = _logCache.get(key);
+            if (hit) { if (opt.onReady) opt.onReady(hit, true); return true; }
+            if (opt.cacheOnly) return false;
+
+            serverCall({
+                key: opt.reqKey || 'itemDetailLog',
+                fn: 'getItemDetailLog',
+                args: [{ itemName, startDate, endDate }],
+                replace: true,                  // buka item lain saat loading tetap dilayani
+                quiet: true,                    // modal punya indikator sendiri
+                onSuccess: res => {
+                    const logs = res.data || [];
+                    _logCache.set(key, logs);
+                    if (opt.onReady) opt.onReady(logs, false);
+                },
+                onError: msg => { if (opt.onError) opt.onError(msg); }
+            });
+            return false;
+        }
+
+        /** Hover-intent: siapkan log SEBELUM tombol Log diklik (terasa instan). */
+        function prefetchItemLog(itemName) {
+            clearTimeout(_logHoverTimer);
+            if (_logPrefetchBudget <= 0) return;
+            _logHoverTimer = setTimeout(() => {
+                const startDate = document.getElementById('filter-start').value;
+                const endDate   = document.getElementById('filter-end').value;
+                const key = _logCacheKey(itemName, startDate, endDate);
+                if (_logCache.has(key) || _logPrefetching.has(key)) return;
+                _logPrefetching.add(key);
+                _logPrefetchBudget--;
+                fetchItemLog(itemName, startDate, endDate, {
+                    reqKey: 'itemLogPrefetch',
+                    onReady: () => _logPrefetching.delete(key),
+                    onError: () => _logPrefetching.delete(key)
+                });
+            }, 200);
+        }
+
+        function cancelPrefetchItemLog() { clearTimeout(_logHoverTimer); }
+
         // BOOSTER: debounce untuk input pencarian (hindari render tiap ketukan tombol)
         function _debounce(fn, delay) {
             let t;
@@ -1183,7 +1702,8 @@
             inboundCurrent: 'idle',  inboundFull: 'idle',
             opnamePeriod: 'idle',  opnameReport: 'idle',
             opnameSnapshot: 'idle', opnameDraft: 'idle', draftSave: 'idle',
-            opnameFinal: 'idle', itemDetailLog: 'idle'
+            opnameFinal: 'idle', itemDetailLog: 'idle', itemLogPrefetch: 'idle',
+            exp: 'idle', expStatus: 'idle'
         };
         const _reqToken = {};
         function _nextToken(key) { _reqToken[key] = (_reqToken[key] || 0) + 1; return _reqToken[key]; }
@@ -1221,69 +1741,35 @@
 
             const settle = (ok) => { if (opt.onSettled) { try { opt.onSettled(ok); } catch (e) { console.error(e); } } };
 
-            const handleSuccess = (res) => {
-                const ok = !!(res && res.success);
-                finish(ok);
-                if (key && _isStale(key, token)) { settle(ok); return; }   // respons usang -> abaikan hasilnya
-                if (key) REQ[key] = ok ? 'ready' : 'error';
-                try {
-                    if (ok) { if (opt.onSuccess) opt.onSuccess(res); }
-                    else {
-                        const msg = (res && res.message) || 'Terjadi kesalahan pada server.';
-                        if (opt.onError) opt.onError(msg);
-                        else if (opt.alertOnError) showAlert('Gagal', msg, 'error');
-                    }
-                } catch (e) { console.error(e); }
-                settle(ok);
-            };
+            const runner = google.script.run
+                .withSuccessHandler(res => {
+                    const ok = !!(res && res.success);
+                    finish(ok);
+                    if (key && _isStale(key, token)) { settle(ok); return; }   // respons usang -> abaikan hasilnya
+                    if (key) REQ[key] = ok ? 'ready' : 'error';
+                    try {
+                        if (ok) { if (opt.onSuccess) opt.onSuccess(res); }
+                        else {
+                            const msg = (res && res.message) || 'Terjadi kesalahan pada server.';
+                            if (opt.onError) opt.onError(msg);
+                            else if (opt.alertOnError) showAlert('Gagal', msg, 'error');
+                        }
+                    } catch (e) { console.error(e); }
+                    settle(ok);
+                })
+                .withFailureHandler(err => {
+                    finish(false);
+                    if (key && _isStale(key, token)) { settle(false); return; }
+                    if (key) REQ[key] = 'error';
+                    const errMsg = (err && (err.message || err.toString())) || 'Koneksi server gagal.';
+                    try {
+                        if (opt.onError) opt.onError(errMsg);
+                        else if (opt.alertOnError) showAlert('Error', errMsg, 'error');
+                    } catch (e) { console.error(e); }
+                    settle(false);
+                });
 
-            const handleFailure = (err) => {
-                finish(false);
-                if (key && _isStale(key, token)) { settle(false); return; }
-                if (key) REQ[key] = 'error';
-                let errMsg = (err && (err.message || err.toString())) || 'Koneksi server gagal.';
-                if (errMsg.indexOf('Failed to fetch') > -1 || errMsg.indexOf('NetworkError') > -1) {
-                    errMsg = 'Failed to fetch (Akses Ditolak Google). Pastikan saat Deploy Apps Script opsi "Who has access / Siapa yang memiliki akses" disetel ke "Anyone / Siapa saja" dan gunakan URL "/exec" Versi Baru.';
-                }
-                try {
-                    if (opt.onError) opt.onError(errMsg);
-                    else if (opt.alertOnError) showAlert('Error', errMsg, 'error');
-                } catch (e) { console.error(e); }
-                settle(false);
-            };
-
-            // MODE 1: Berjalan langsung di Google Apps Script (HTML Service)
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                const runner = google.script.run
-                    .withSuccessHandler(handleSuccess)
-                    .withFailureHandler(handleFailure);
-                runner[opt.fn].apply(runner, opt.args || []);
-                return true;
-            }
-
-            // MODE 2: Berjalan di GitHub Pages / Hosting Eksternal (via Fetch API)
-            if (!GAS_API_URL || GAS_API_URL.indexOf("PASTE_URL_WEB_APP") > -1) {
-                handleFailure(new Error("URL API belum disetel! Harap isi variabel GAS_API_URL di Index.html dengan URL Web App Apps Script Anda."));
-                return false;
-            }
-
-            // Kirim POST dengan header text/plain agar browser TIDAK mengirim preflight OPTIONS (CORS Bypass)
-            fetch(GAS_API_URL, {
-                method: "POST",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({
-                    action: opt.fn,
-                    args: opt.args || []
-                }),
-                redirect: "follow"
-            })
-            .then(res => {
-                if (!res.ok) throw new Error("HTTP " + res.status + ": " + res.statusText);
-                return res.json();
-            })
-            .then(data => handleSuccess(data))
-            .catch(err => handleFailure(err));
-
+            runner[opt.fn].apply(runner, opt.args || []);
             return true;
         }
 
@@ -1523,9 +2009,10 @@
                 (next) => loadOutboundData({ background: true, onSettled: next }), // 5. full outbound
                 (next) => loadInboundData({ background: true, onSettled: next }),  // 6. full inbound
                 (next) => loadFullStock({ background: true, onSettled: next }),    // 7. full stock (YTD)
-                (next) => loadOpnamePeriods({ onSettled: next }),                  // 8. periode opname
+                (next) => loadExpData(null, { background: true, onSettled: next }),// 8. dataset exp monitor (lonceng alert)
+                (next) => loadOpnamePeriods({ onSettled: next }),                  // 9. periode opname
                 (next) => checkOpnameDraft({ onSettled: next }),                   // draft opname (kecil)
-                (next) => loadOpnameReport({ background: true, onSettled: next })  // 9. laporan opname
+                (next) => loadOpnameReport({ background: true, onSettled: next })  // 10. laporan opname
             ];
 
             let i = 0;
@@ -1580,6 +2067,15 @@
             if (tabId === 'tab-stock') {
                 if (globalStockData.length) renderFilteredStock();
                 if (!globalStockData.length && _needsFetch(['stockCurrent', 'stockFull'])) loadCurrentStock();
+            }
+            if (tabId === 'tab-exp') {
+                // Kerangka (kalender / tabel) selalu digambar lebih dulu supaya
+                // halaman tidak pernah tampak kosong, walau datanya masih dalam
+                // perjalanan. Request hanya dilakukan bila memang belum ada.
+                renderExpStats();
+                if (_expView === 'table') renderExpMonthTable(); else renderCalendar();
+                if (_expPanelMode) _refreshExpPanel();
+                if (!globalExpData.length && _needsFetch(['exp'])) loadExpData();
             }
             if (tabId === 'tab-opname') {
                 renderDraftBanner();
@@ -1891,6 +2387,8 @@
          * dan laporan opname tidak ikut dibuang.
          */
         function invalidateOutboundClient() {
+            invalidateLogCache();          // log kartu stock ikut disegarkan
+            invalidateExpClient();         // sisa batch (FIFO) di Exp Monitor ikut berubah
             globalOutboundData = [];
             globalStockData = [];
             _stockIndex = new Map();
@@ -1901,8 +2399,19 @@
             setStockScopeNote(false);
         }
 
+        /** Dataset Exp Monitor ikut usang saat data masuk/keluar berubah. */
+        function invalidateExpClient() {
+            globalExpData = [];
+            _expByDate = new Map();
+            _expLoadedFrom = null;
+            REQ.exp = 'idle';
+            if (isTabActive('tab-exp')) loadExpData();
+        }
+
         /** Edit Exp Date hanya membatalkan cache Inbound (QTY tidak berubah). */
         function invalidateInboundClient() {
+            invalidateLogCache();          // exp date pada log ikut berubah
+            invalidateExpClient();         // exp date adalah sumber Exp Monitor
             globalInboundData = [];
             REQ.inboundCurrent = 'idle';
             REQ.inboundFull    = 'idle';
@@ -2235,7 +2744,8 @@
                     <td style="text-align:center;">
                         <button onclick="showStockDetail('${row.namaItem.replace(/'/g,"\\'")}')"
                             style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:0.78rem; font-family:'Sora',sans-serif; display:inline-flex; align-items:center; gap:6px; font-weight:700;"
-                            onmouseover="this.style.background='rgba(15, 118, 110, 0.15)'" onmouseout="this.style.background='var(--accent-soft)'">
+                            onmouseover="this.style.background='rgba(15, 118, 110, 0.15)'; prefetchItemLog('${row.namaItem.replace(/'/g,"\\'")}')"
+                            onmouseout="this.style.background='var(--accent-soft)'; cancelPrefetchItemLog()">
                             <i class="ph ph-eye" style="font-size:0.95rem;"></i> Log
                         </button>
                     </td>`;
@@ -2253,64 +2763,93 @@
 
             document.getElementById('modal-item-name').textContent = stripCode(itemName);
             const tbody = document.getElementById('modal-tbody');
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-muted);"><i class="ph ph-circle-notch" style="animation:spin 1s linear infinite; display:inline-block; font-size:1.5rem;"></i><br><span style="display:inline-block; margin-top:8px;">Memuat data log...</span></td></tr>';
             document.getElementById('detail-modal').classList.add('show');
 
-            serverCall({
-                key: 'itemDetailLog',
-                fn: 'getItemDetailLog',
-                args: [{ itemName, startDate, endDate }],
-                replace: true,                  // buka item lain saat loading tetap dilayani
-                quiet: true,   // modal punya indikator sendiri
-                onSuccess: res => {
-                    tbody.innerHTML = '';
-                    const logs = res.data;
-                    if (!logs.length) {
-                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">Tidak ada riwayat pada periode ini.</td></tr>';
-                        return;
-                    }
+            // Token render: bila user keburu membuka item lain, hasil lama dibuang.
+            const myToken = ++_logRenderToken;
 
-                    const sorted = [...logs].sort((a,b) => new Date(a.rawDate||a.tanggal) - new Date(b.rawDate||b.tanggal));
-                    let running = 0;
-                    const withBalance = sorted.map(log => {
-                        const isInit  = log.jenis === 'INIT' || log.isStockAwal;
-                        const isMasuk = log.jenis === 'IN'   || isInit;
-                        if (isInit) running = parseFloat(log.qty);
-                        else running += isMasuk ? parseFloat(log.qty) : -parseFloat(log.qty);
-                        return { ...log, balance: running };
-                    });
-
-                    const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
-                    withBalance.reverse().forEach(log => {
-                        const tr      = document.createElement('tr');
-                        const isInit  = log.jenis === 'INIT' || log.isStockAwal;
-                        const isMasuk = log.jenis === 'IN'   || isInit;
-                        const adjBadge = log.isAdjustment ? ` <span class="badge badge-adj" style="padding:1px 6px;">ADJ</span>` : '';
-                        const badgeHtml = isInit ? `<span class="badge badge-init">AWAL</span>`
-                                        : isMasuk ? `<span class="badge badge-in">IN</span>${adjBadge}`
-                                        : `<span class="badge badge-out">OUT</span>${adjBadge}`;
-
-                        let expDateVal = '—', expStyle = '';
-                        if (isMasuk) {
-                            const rawExp = log.expDate || log.exp_date || log.expired || log.ket || log.keterangan;
-                            if (rawExp) { expDateVal = formatExpDate(rawExp); expStyle = getExpDateStyle(rawExp); }
-                        }
-
-                        tr.innerHTML = `
-                            <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${log.tanggal}</td>
-                            <td class="mono" style="font-size:0.78rem;"><span style="${expStyle}">${expDateVal}</span></td>
-                            <td style="text-align:center;">${badgeHtml}</td>
-                            <td style="text-align:right; font-weight:800; color:${isMasuk?'var(--green)':'var(--red)'};">${isMasuk?'+':'-'}${parseFloat(log.qty).toFixed(2)}</td>
-                            <td style="text-align:right; font-size:0.925rem; font-weight:800; background:rgba(15, 118, 110, 0.02);" class="${log.balance<0?'sisa-neg':'sisa-pos'}">${log.balance.toFixed(2)}</td>
-                            <td style="color:var(--text-dim); font-size:0.8rem; font-weight:500;">${log.uom}</td>`;
-                        frag.appendChild(tr);
-                    });
-                    tbody.appendChild(frag);   // BOOSTER: satu kali insert
+            const served = fetchItemLog(itemName, startDate, endDate, {
+                onReady: (logs, fromCache) => {
+                    if (myToken !== _logRenderToken) return;
+                    renderItemLog(tbody, logs);
                 },
                 onError: msg => {
+                    if (myToken !== _logRenderToken) return;
                     tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:16px; color:var(--red);">${msg}</td></tr>`;
                 }
             });
+
+            // Placeholder hanya bila data memang belum ada (cache = tanpa kedip).
+            if (!served) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-muted);"><i class="ph ph-circle-notch" style="animation:spin 1s linear infinite; display:inline-block; font-size:1.5rem;"></i><br><span style="display:inline-block; margin-top:8px;">Memuat data log...</span></td></tr>';
+            }
+        }
+
+        let _logRenderToken = 0;
+
+        /**
+         * BOOSTER RENDER: satu string HTML, satu kali sentuh DOM.
+         * Sebelumnya setiap baris membuat elemen <tr> sendiri lalu mengisi
+         * innerHTML-nya satu per satu — untuk log panjang, biaya parser HTML
+         * per baris itulah yang membuat modal terasa berat.
+         */
+        function renderItemLog(tbody, logs) {
+            if (!logs || !logs.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">Tidak ada riwayat pada periode ini.</td></tr>';
+                return;
+            }
+
+            // Backend sudah mengurutkan lama -> baru; salinan diurutkan lagi
+            // hanya bila memang belum urut (murah, sekali jalan).
+            let sorted = logs;
+            for (let i = 1; i < logs.length; i++) {
+                if ((logs[i].rawDate || 0) < (logs[i - 1].rawDate || 0)) {
+                    sorted = logs.slice().sort((a, b) => (a.rawDate || 0) - (b.rawDate || 0));
+                    break;
+                }
+            }
+
+            // Saldo berjalan dihitung dari lama -> baru, tampilan tetap baru -> lama.
+            const n = sorted.length;
+            const balances = new Array(n);
+            let running = 0;
+            for (let i = 0; i < n; i++) {
+                const log = sorted[i];
+                const isInit = log.jenis === 'INIT' || log.isStockAwal;
+                const qty = parseFloat(log.qty) || 0;
+                if (isInit) running = qty;
+                else running += (log.jenis === 'IN') ? qty : -qty;
+                balances[i] = running;
+            }
+
+            const html = new Array(n);
+            for (let i = n - 1, k = 0; i >= 0; i--, k++) {
+                const log     = sorted[i];
+                const isInit  = log.jenis === 'INIT' || log.isStockAwal;
+                const isMasuk = log.jenis === 'IN'   || isInit;
+                const bal     = balances[i];
+                const adjBadge = log.isAdjustment ? ' <span class="badge badge-adj" style="padding:1px 6px;">ADJ</span>' : '';
+                const badgeHtml = isInit ? '<span class="badge badge-init">AWAL</span>'
+                                : isMasuk ? '<span class="badge badge-in">IN</span>' + adjBadge
+                                : '<span class="badge badge-out">OUT</span>' + adjBadge;
+
+                let expDateVal = '—', expStyle = '';
+                if (isMasuk) {
+                    const rawExp = log.expDate || log.exp_date || log.expired || log.ket || log.keterangan;
+                    if (rawExp) { expDateVal = formatExpDate(rawExp); expStyle = getExpDateStyle(rawExp); }
+                }
+
+                html[k] =
+                    '<tr>' +
+                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${log.tanggal}</td>` +
+                    `<td class="mono" style="font-size:0.78rem;"><span style="${expStyle}">${expDateVal}</span></td>` +
+                    `<td style="text-align:center;">${badgeHtml}</td>` +
+                    `<td style="text-align:right; font-weight:800; color:${isMasuk ? 'var(--green)' : 'var(--red)'};">${isMasuk ? '+' : '-'}${(parseFloat(log.qty) || 0).toFixed(2)}</td>` +
+                    `<td style="text-align:right; font-size:0.925rem; font-weight:800; background:rgba(15, 118, 110, 0.02);" class="${bal < 0 ? 'sisa-neg' : 'sisa-pos'}">${bal.toFixed(2)}</td>` +
+                    `<td style="color:var(--text-dim); font-size:0.8rem; font-weight:500;">${log.uom}</td>` +
+                    '</tr>';
+            }
+            tbody.innerHTML = html.join('');   // BOOSTER: satu kali sentuh DOM
         }
 
         function closeModal() { document.getElementById('detail-modal').classList.remove('show'); }
@@ -3027,7 +3566,8 @@
             'filter-in-name':   { label: 'Cari Item · Data Masuk',       type: 'filter', apply: applyFilterInbound },
             'filter-item-name': { label: 'Cari Item · Kartu Stock',      type: 'filter', apply: renderFilteredStock },
             'opn-search':       { label: 'Cari Item · Stock Opname',     type: 'filter', apply: renderOpnameTable, after: focusOpnameRow },
-            'laporan-search':   { label: 'Cari Item · Laporan Opname',   type: 'filter', apply: renderOpnameReport }
+            'laporan-search':   { label: 'Cari Item · Laporan Opname',   type: 'filter', apply: renderOpnameReport },
+            'filter-exp-name':  { label: 'Cari Item · Exp Monitor',      type: 'filter', apply: _onExpSearch }
         };
 
         let _scanTargetId  = null;
@@ -3315,6 +3855,14 @@
             setScanStatus('scanning');
             setScanCamMessage('');
             document.getElementById('scan-modal').classList.add('show');
+
+            const manual = document.getElementById('scan-manual');
+            if (manual) {
+                manual.value = '';
+                // Scanner alat (HID) mengetik ke kolom ini, jadi harus selalu fokus.
+                setTimeout(() => { try { manual.focus(); } catch (e) {} }, 120);
+            }
+
             startCameraScan();
         }
 
@@ -3324,24 +3872,35 @@
             if (m) m.classList.remove('show');
         }
 
+        function submitManualScan() {
+            const el = document.getElementById('scan-manual');
+            if (!el) return;
+            const val = el.value.trim();
+            el.value = '';
+            if (val) handleScannedCode(val, false);
+            try { el.focus(); } catch (e) {}
+        }
+
         // ---------------- Kamera ----------------
 
         function cameraErrorText(err) {
             const name = (err && err.name) ? err.name : '';
             if (name === 'NotAllowedError' || name === 'SecurityError') {
                 return '<i class="ph ph-lock-key"></i><div><b>Akses kamera ditolak.</b><br>' +
-                       'Izinkan akses kamera pada browser Anda, lalu buka ulang scanner.</div>';
+                       'Izinkan kamera pada browser, lalu buka ulang jendela ini. ' +
+                       'Bila aplikasi ditampilkan di dalam frame (embed), buka lewat URL web app langsung.<br>' +
+                       'Scanner alat &amp; input manual di bawah tetap bisa dipakai.</div>';
             }
             if (name === 'NotFoundError' || name === 'OverconstrainedError') {
                 return '<i class="ph ph-camera-slash"></i><div><b>Kamera tidak ditemukan.</b><br>' +
-                       'Pastikan perangkat memiliki kamera yang terhubung.</div>';
+                       'Gunakan scanner alat atau ketik kode di bawah.</div>';
             }
             if (name === 'NotReadableError') {
                 return '<i class="ph ph-camera-slash"></i><div><b>Kamera sedang dipakai aplikasi lain.</b><br>' +
                        'Tutup aplikasi tersebut lalu coba lagi.</div>';
             }
             return '<i class="ph ph-camera-slash"></i><div><b>Kamera tidak dapat dibuka.</b><br>' +
-                   'Periksa izin kamera pada browser.</div>';
+                   'Gunakan scanner alat atau ketik kode di bawah.</div>';
         }
 
         async function startCameraScan(deviceId) {
@@ -3554,6 +4113,17 @@
             if (m) m.addEventListener('click', (e) => { if (e.target === m) closeScanner(); });
         });
 
+        // Modal alert exp: klik area gelap atau tombol Esc untuk menutup.
+        document.addEventListener('DOMContentLoaded', () => {
+            const m = document.getElementById('exp-alert-modal');
+            if (m) m.addEventListener('click', (e) => { if (e.target === m) closeExpAlertModal(); });
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const m = document.getElementById('exp-alert-modal');
+            if (m && m.classList.contains('show')) closeExpAlertModal();
+        });
+
         // Kamera tidak boleh tetap menyala saat tab disembunyikan / halaman ditutup.
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
@@ -3562,6 +4132,854 @@
             }
         });
         window.addEventListener('pagehide', stopCameraScan);
+
+        /* =====================================================================
+           EXP MONITOR — MONITORING TANGGAL EXPIRED
+           ---------------------------------------------------------------------
+           Halaman baru. Seluruh datanya BERASAL dari Sheet MASUK (Exp Date-nya
+           mengikuti Sheet EXP), dan penandaan manual disimpan terpisah di Sheet
+           EXP_STATUS. Tidak ada business logic lama (stock, opname, transaksi)
+           yang tersentuh dari sini — halaman ini murni membaca + menandai.
+           ===================================================================== */
+
+        let globalExpData    = [];          // seluruh batch exp yang sudah dimuat
+        let _expByDate       = new Map();   // 'yyyy-MM-dd' -> [batch]
+        let _expLoadedFrom   = null;        // batas awal data yang sudah ditarik
+        let _selectedExpDate = null;        // tanggal yang sedang dibuka di panel
+        let _expPanelItems   = [];          // isi panel detail (untuk bulk update)
+        let _expPanelMode    = null;        // {type:'date', date} | {type:'cat', cat}
+
+        let calYear  = getJakartaDate().getFullYear();
+        let calMonth = getJakartaDate().getMonth();
+
+        let _expView       = 'calendar';    // 'calendar' | 'table'
+        let _expTblYear    = null;          // null = belum ditentukan | number | 'ALL'
+        let _expTblPeriode = 'ALL';         // 'ALL' | 'yyyy-MM'
+        const _expCollapsedMonths = new Set();
+
+        const DOW_ID = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+
+        const EXP_STATUS_OPTIONS = [
+            { value: 'AKTIF',     label: 'Masih Ada' },
+            { value: 'HABIS',     label: 'Habis Terpakai' },
+            { value: 'TIDAK ADA', label: 'Tidak Ada / Hilang' },
+            { value: 'RETUR',     label: 'Retur / Dibuang' }
+        ];
+
+        const _debouncedFilterExp = _debounce(_onExpSearch, 280);
+
+        function _expEsc(v) {
+            return (v === null || v === undefined) ? '' : v.toString()
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function _expFmtQty(v) {
+            const n = parseFloat(v);
+            return isNaN(n) ? '0' : (Math.round(n * 100) / 100).toString();
+        }
+
+        function _currentMonthStart() {
+            const jkt = getJakartaDate();
+            return jkt.getFullYear() + '-' + String(jkt.getMonth() + 1).padStart(2, '0') + '-01';
+        }
+
+        function _dateKey(y, m, d) {
+            return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        }
+
+        function _fmtDateLabel(dateStr) {
+            const p = (dateStr || '').split('-');
+            if (p.length < 3) return dateStr || '';
+            return parseInt(p[2], 10) + ' ' + (BULAN[parseInt(p[1], 10) - 1] || p[1]) + ' ' + p[0];
+        }
+
+        // ===================== MUAT DATA =====================
+        /**
+         * Default hanya menarik exp dari bulan berjalan ke depan (BOOSTER).
+         * Bulan lampau baru diambil saat user memundurkan kalender atau memilih
+         * periode lama — persis pola lazy-load pada data transaksi.
+         */
+        function loadExpData(fromDate, opt) {
+            opt = opt || {};
+            const start = fromDate || _expLoadedFrom || _currentMonthStart();
+            return serverCall({
+                key: 'exp',
+                fn: 'getExpMonitorData',
+                args: [{ startDate: start, force: !!opt.force }],
+                replace: true,
+                blocking: !!opt.blocking,
+                quiet: !!opt.background,
+                onSuccess: res => _applyExpData(res, start),
+                onError: msg => { if (!opt.background) showAlert('Gagal', msg, 'error'); },
+                onSettled: opt.onSettled
+            });
+        }
+
+        /** Terapkan hasil getExpMonitorData ke seluruh tampilan exp. */
+        function _applyExpData(res, start) {
+            globalExpData  = res.data || [];
+            _expLoadedFrom = start || _expLoadedFrom || _currentMonthStart();
+            _buildExpIndex();
+            renderExpStats();
+            updateExpAlerts();
+            if (document.getElementById('cal-grid')) renderCalendar();
+            if (_expView === 'table') renderExpMonthTable();
+            if (_expPanelMode) _refreshExpPanel();
+        }
+
+        function _buildExpIndex() {
+            _expByDate = new Map();
+            for (const r of globalExpData) {
+                if (!r.expDate) continue;
+                if (!_expByDate.has(r.expDate)) _expByDate.set(r.expDate, []);
+                _expByDate.get(r.expDate).push(r);
+            }
+        }
+
+        /**
+         * Selisih hari terhadap HARI INI (Jakarta): negatif = sudah lewat.
+         * 'yyyy-MM-dd' sengaja dirakit sebagai tanggal LOKAL — bila diserahkan
+         * ke new Date() string itu dibaca sebagai UTC dan hasilnya bisa meleset
+         * satu hari pada perangkat yang zona waktunya di belakang UTC.
+         */
+        function _expDayDiff(dateStr) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+            let dayTs;
+            if (m) {
+                dayTs = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10)).getTime();
+            } else {
+                const d = parseLooseDate(dateStr);
+                if (!d) return 99999;
+                dayTs = d.dayTs;
+            }
+            return Math.round((dayTs - todayJakartaStart()) / 86400000);
+        }
+
+        // ===================== PENCARIAN =====================
+        function _expKeyword() {
+            const el = document.getElementById('filter-exp-name');
+            return el ? el.value.toLowerCase().trim() : '';
+        }
+
+        function _expMatchKeyword(r, kw) {
+            if (!kw) return true;
+            const nama = (r.namaItem || '').toLowerCase();
+            return stripCode(r.namaItem || '').toLowerCase().includes(kw) || nama.includes(kw);
+        }
+
+        function _rerenderExpViews() {
+            if (_expView === 'table') renderExpMonthTable();
+            else renderCalendar();
+            if (_expPanelMode) _refreshExpPanel();
+        }
+
+        /**
+         * Pencarian menunjukkan DI MANA item itu berada: chip tanggal hasil, dan
+         * kalender otomatis melompat ke bulan pertama yang memuat kecocokan.
+         */
+        function _onExpSearch() {
+            const kw  = _expKeyword();
+            const box = document.getElementById('exp-search-results');
+            if (!kw) {
+                if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+                _rerenderExpViews();
+                return;
+            }
+
+            const dates = [...new Set(
+                globalExpData.filter(r => r.expDate && _expMatchKeyword(r, kw)).map(r => r.expDate)
+            )].sort();
+
+            if (box) {
+                if (!dates.length) {
+                    box.innerHTML = `<p style="font-size:var(--fs-sm); color:var(--text-dim); margin:0;">Tidak ada batch exp yang cocok dengan "<b>${_expEsc(kw)}</b>" pada data yang dimuat.</p>`;
+                } else {
+                    const chips = dates.slice(0, 10).map(d =>
+                        `<button type="button" class="exp-hit-chip" onclick="_gotoExpDate('${d}')"><i class="ph ph-calendar-dot"></i>${_fmtDateLabel(d)}</button>`
+                    ).join('');
+                    const more = dates.length > 10
+                        ? `<span style="font-size:var(--fs-xs); color:var(--text-dim); align-self:center;">+${dates.length - 10} tanggal lainnya</span>` : '';
+                    box.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                        <span class="eyebrow">${dates.length} tanggal exp:</span>${chips}${more}</div>`;
+                }
+                box.style.display = 'block';
+            }
+
+            if (dates.length) {
+                const curPrefix = calYear + '-' + String(calMonth + 1).padStart(2, '0');
+                if (!dates.some(d => d.startsWith(curPrefix))) {
+                    const jkt = getJakartaDate();
+                    const todayKey = _dateKey(jkt.getFullYear(), jkt.getMonth(), jkt.getDate());
+                    const target = dates.find(d => d >= todayKey) || dates[dates.length - 1];
+                    calYear  = parseInt(target.slice(0, 4), 10);
+                    calMonth = parseInt(target.slice(5, 7), 10) - 1;
+                }
+            }
+            _rerenderExpViews();
+        }
+
+        function _gotoExpDate(key) {
+            calYear  = parseInt(key.slice(0, 4), 10);
+            calMonth = parseInt(key.slice(5, 7), 10) - 1;
+            selectExpDay(key);
+        }
+
+        // ===================== ALERT (LONCENG + MODAL) =====================
+        /** Batch yang masih AKTIF dan exp hari ini s/d 7 hari ke depan. */
+        function _getUrgentExpItems() {
+            return globalExpData.filter(r => {
+                if (r.status && r.status !== 'AKTIF') return false;
+                const diff = _expDayDiff(r.expDate);
+                return diff >= 0 && diff <= 7;
+            }).sort((a, b) => (a.expDate || '').localeCompare(b.expDate || ''));
+        }
+
+        function updateExpAlerts() {
+            const urgent = _getUrgentExpItems();
+
+            const bell = document.getElementById('exp-bell');
+            if (bell) {
+                bell.style.display = urgent.length ? 'flex' : 'none';
+                const cnt = document.getElementById('exp-bell-count');
+                if (cnt) cnt.textContent = urgent.length;
+            }
+
+            const banner     = document.getElementById('exp-alert-banner');
+            const modalBody  = document.getElementById('exp-alert-modal-body');
+            const modalCount = document.getElementById('exp-alert-modal-count');
+
+            if (!urgent.length) {
+                if (banner) { banner.style.display = 'none'; banner.innerHTML = ''; }
+                if (modalBody) modalBody.innerHTML = '<p style="font-size:var(--fs-sm); color:var(--text-dim); margin:0;">Tidak ada batch yang expired hari ini atau dalam 7 hari ke depan.</p>';
+                if (modalCount) modalCount.textContent = '0';
+                return;
+            }
+
+            if (banner) {
+                banner.innerHTML = `
+                    <button type="button" class="exp-alert-pill" onclick="openExpAlerts()">
+                        <i class="ph ph-warning-circle"></i>
+                        <span>${urgent.length} batch exp hari ini / &le; 7 hari</span>
+                        <span class="pill-cta">Lihat Detail &rarr;</span>
+                    </button>`;
+                banner.style.display = 'block';
+            }
+            if (modalCount) modalCount.textContent = urgent.length;
+            if (modalBody) {
+                modalBody.innerHTML = urgent.map(r => {
+                    const diff = _expDayDiff(r.expDate);
+                    const when = diff === 0 ? '<b style="color:var(--red);">HARI INI</b>' : `<b style="color:var(--amber);">${diff} hari lagi</b>`;
+                    return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 0; border-bottom:1px dashed var(--border); font-size:var(--fs-sm);">
+                        <span style="font-weight:700; color:var(--text);">${_expEsc(stripCode(r.namaItem))} <span style="color:var(--text-dim); font-weight:500;">· ${_expFmtQty(r.qtySisa !== undefined ? r.qtySisa : r.qty)} ${_expEsc(r.uom || '')}</span></span>
+                        <span style="white-space:nowrap; color:var(--text-muted);">${_fmtDateLabel(r.expDate)} (${when})</span>
+                    </div>`;
+                }).join('');
+            }
+        }
+
+        function openExpAlerts() {
+            const m = document.getElementById('exp-alert-modal');
+            if (m) m.classList.add('show');
+        }
+        function closeExpAlertModal() {
+            const m = document.getElementById('exp-alert-modal');
+            if (m) m.classList.remove('show');
+        }
+        function expAlertGoMonitor() {
+            closeExpAlertModal();
+            switchTab('tab-exp');
+            showExpCategory('week');
+        }
+
+        // ===================== RINGKASAN =====================
+        function renderExpStats() {
+            let expired = 0, week = 0, month = 0, done = 0;
+            for (const r of globalExpData) {
+                if (r.status && r.status !== 'AKTIF') { done++; continue; }
+                const diff = _expDayDiff(r.expDate);
+                if (diff < 0) expired++;
+                else if (diff <= 7) week++;
+                else if (diff <= 30) month++;
+            }
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            set('exp-stat-expired', expired);
+            set('exp-stat-week', week);
+            set('exp-stat-month', month);
+            set('exp-stat-done', done);
+        }
+
+        // ===================== KALENDER =====================
+        function calShiftMonth(delta) {
+            calMonth += delta;
+            if (calMonth < 0)  { calMonth = 11; calYear--; }
+            if (calMonth > 11) { calMonth = 0;  calYear++; }
+
+            // LAZY-LOAD: mundur ke bulan yang datanya belum ditarik -> ambil dulu.
+            const monthStart = _dateKey(calYear, calMonth, 1);
+            if (_expLoadedFrom && monthStart < _expLoadedFrom) { loadExpData(monthStart); return; }
+            renderCalendar();
+        }
+
+        function calGoToday() {
+            const jkt = getJakartaDate();
+            calYear  = jkt.getFullYear();
+            calMonth = jkt.getMonth();
+            renderCalendar();
+        }
+
+        function renderCalendar() {
+            const label = document.getElementById('cal-month-label');
+            const grid  = document.getElementById('cal-grid');
+            if (!label || !grid) return;
+            label.textContent = BULAN[calMonth] + ' ' + calYear;
+
+            const dowRow = document.getElementById('cal-dow-row');
+            if (dowRow) dowRow.innerHTML = DOW_ID.map(d => `<div class="cal-dow">${d}</div>`).join('');
+
+            const jkt      = getJakartaDate();
+            const todayKey = _dateKey(jkt.getFullYear(), jkt.getMonth(), jkt.getDate());
+            const offset   = (new Date(calYear, calMonth, 1).getDay() + 6) % 7;   // Senin di kolom pertama
+            const daysIn   = new Date(calYear, calMonth + 1, 0).getDate();
+            const rows     = Math.ceil((offset + daysIn) / 7);
+            const kw       = _expKeyword();
+
+            const cells = [];
+            for (let i = 0; i < rows * 7; i++) {
+                const cellDate = new Date(calYear, calMonth, 1 - offset + i);
+                const y = cellDate.getFullYear(), m = cellDate.getMonth(), d = cellDate.getDate();
+                const key = _dateKey(y, m, d);
+                const items = (_expByDate.get(key) || []).filter(r => _expMatchKeyword(r, kw));
+
+                let cls = 'cal-day';
+                if (m !== calMonth)        cls += ' other-month';
+                if (key === todayKey)      cls += ' today';
+                if (items.length)          cls += ' has-items';
+                if (key === _selectedExpDate) cls += ' selected';
+
+                let inner = `<span class="cal-day-num">${d}</span>`;
+                if (items.length) {
+                    const aktif = items.filter(r => !r.status || r.status === 'AKTIF');
+                    const doneN = items.length - aktif.length;
+                    if (aktif.length) {
+                        const diff = _expDayDiff(key);
+                        const sev  = diff < 0 ? 'cal-chip-expired' : (diff <= 7 ? 'cal-chip-soon' : 'cal-chip-ok');
+                        inner += `<span class="cal-chip ${sev}">${aktif.length}<span class="cal-chip-word"> item</span></span>`;
+                    }
+                    if (doneN) inner += `<span class="cal-chip cal-chip-done">${doneN}<span class="cal-chip-word"> selesai</span></span>`;
+                }
+
+                cells.push(items.length
+                    ? `<div class="${cls}" onclick="selectExpDay('${key}')">${inner}</div>`
+                    : `<div class="${cls}">${inner}</div>`);
+            }
+            grid.innerHTML = cells.join('');   // BOOSTER: satu kali sentuh DOM
+        }
+
+        // ===================== TAMPILAN TABEL (GROUPING PER BULAN) =====================
+        function setExpView(view) {
+            const next = (view === 'table') ? 'table' : 'calendar';
+            _expView = next;
+
+            const card   = document.getElementById('exp-view-card');
+            const calBox = document.getElementById('exp-cal-view');
+            const tblBox = document.getElementById('exp-table-view');
+            const calNav = document.getElementById('exp-cal-nav');
+            const tblNav = document.getElementById('exp-tbl-nav');
+            const bc     = document.getElementById('exp-view-btn-calendar');
+            const bt     = document.getElementById('exp-view-btn-table');
+
+            if (card)   card.classList.toggle('mode-table', next === 'table');
+            const duo = document.getElementById('exp-duo');
+            if (duo) duo.classList.toggle('table-mode', next === 'table');
+            if (calBox) calBox.style.display = (next === 'table') ? 'none' : '';
+            if (tblBox) tblBox.style.display = (next === 'table') ? ''     : 'none';
+            if (calNav) calNav.style.display = (next === 'table') ? 'none' : 'flex';
+            if (tblNav) tblNav.style.display = (next === 'table') ? 'flex' : 'none';
+            if (bc) bc.classList.toggle('active', next !== 'table');
+            if (bt) bt.classList.toggle('active', next === 'table');
+
+            if (next !== 'table') { renderCalendar(); return; }
+
+            // Tabel memakai pengelompokan setahun penuh: pastikan data sejak
+            // Januari tahun ini ikut ditarik (pola lazy-load yang sama).
+            const jan = getJakartaDate().getFullYear() + '-01-01';
+            if (_expLoadedFrom && jan < _expLoadedFrom) { loadExpData(jan); return; }
+            renderExpMonthTable();
+        }
+
+        function _expMonthKey(dateStr) { return (dateStr || '').slice(0, 7); }
+
+        function _expMonthLabel(ym) {
+            const p = ym.split('-');
+            return (BULAN[parseInt(p[1], 10) - 1] || p[1]) + ' ' + p[0];
+        }
+
+        /** Urutan grup bulan: tahun berjalan dulu, lalu tahun depan, lalu tahun lampau. */
+        function _expSortMonthKeys(keys, thisYear) {
+            const rank = ym => {
+                const y = parseInt(ym.slice(0, 4), 10);
+                if (y === thisYear) return 0;
+                return y > thisYear ? 1 : 2;
+            };
+            return keys.slice().sort((a, b) => {
+                const ra = rank(a), rb = rank(b);
+                if (ra !== rb) return ra - rb;
+                return (ra === 2) ? b.localeCompare(a) : a.localeCompare(b);
+            });
+        }
+
+        function _expSetTblYear(y) {
+            _expTblYear = y;
+            if (_expTblPeriode !== 'ALL' && y !== 'ALL' &&
+                parseInt(_expTblPeriode.slice(0, 4), 10) !== y) _expTblPeriode = 'ALL';
+            renderExpMonthTable();
+        }
+
+        function setExpTblPeriode(ym) {
+            _expTblPeriode = ym || 'ALL';
+            if (_expTblPeriode !== 'ALL') {
+                const y = parseInt(_expTblPeriode.slice(0, 4), 10);
+                if (y && _expTblYear !== 'ALL' && _expTblYear !== y) _expTblYear = y;
+                _expCollapsedMonths.delete(_expTblPeriode);   // bulan yang sengaja dipilih selalu terbuka
+            }
+            renderExpMonthTable();
+        }
+
+        function resetExpTblFilter() {
+            _expTblPeriode = 'ALL';
+            renderExpMonthTable();
+        }
+
+        function _expFocusPeriod() {
+            const sel = document.getElementById('exp-period-select');
+            if (!sel) return;
+            sel.focus();
+            if (typeof sel.showPicker === 'function') { try { sel.showPicker(); } catch (e) {} }
+        }
+
+        function _expRenderPeriodSelect(monthKeys, nowYm) {
+            const sel = document.getElementById('exp-period-select');
+            if (!sel) return;
+            const opts = ['<option value="ALL">Bulan berjalan &amp; ke depan</option>'];
+            monthKeys.forEach(ym => {
+                const lampau = (ym < nowYm) ? ' · lampau' : '';
+                opts.push(`<option value="${ym}">${_expMonthLabel(ym)}${lampau}</option>`);
+            });
+            sel.innerHTML = opts.join('');
+            sel.value = _expTblPeriode;
+            sel.classList.toggle('is-active', _expTblPeriode !== 'ALL');
+        }
+
+        function _expToggleMonth(ym) {
+            if (_expCollapsedMonths.has(ym)) _expCollapsedMonths.delete(ym);
+            else _expCollapsedMonths.add(ym);
+            renderExpMonthTable();
+        }
+
+        function _expRenderYearPills(years, thisYear) {
+            const box = document.getElementById('exp-year-pills');
+            if (!box) return;
+            const pills = years.map(y =>
+                `<button type="button" class="exp-year-pill${_expTblYear === y ? ' active' : ''}" onclick="_expSetTblYear(${y})">` +
+                `${y}${y === thisYear ? ' · tahun ini' : ''}</button>`
+            );
+            pills.push(`<button type="button" class="exp-year-pill${_expTblYear === 'ALL' ? ' active' : ''}" onclick="_expSetTblYear('ALL')">Semua Tahun</button>`);
+            box.innerHTML = pills.join('');
+        }
+
+        function _expSisaHariHtml(r, diff) {
+            if (r.status && r.status !== 'AKTIF') return '<span style="color:var(--text-dim);">—</span>';
+            if (diff < 0)   return `<span class="cal-chip cal-chip-expired">lewat ${Math.abs(diff)} hr</span>`;
+            if (diff === 0) return '<span class="cal-chip cal-chip-soon">hari ini</span>';
+            if (diff <= 7)  return `<span class="cal-chip cal-chip-soon">${diff} hr lagi</span>`;
+            return `<span class="cal-chip cal-chip-ok">${diff} hr lagi</span>`;
+        }
+
+        /** Sel QTY: menampilkan sisa batch (alokasi FIFO) tanpa mengubah qty asli. */
+        function _expQtyCellHtml(r) {
+            const q   = parseFloat(r.qty) || 0;
+            const uom = `<span style="font-weight:500; color:var(--text-dim); font-size:var(--fs-xs);">${_expEsc(r.uom || '')}</span>`;
+            const rem = (r.qtySisa === undefined || r.qtySisa === null) ? null : parseFloat(r.qtySisa);
+            if (rem === null || isNaN(rem) || rem >= q) return `${_expFmtQty(q)} ${uom}`;
+            const color = rem <= 0 ? 'var(--text-dim)' : 'var(--amber)';
+            return `<span style="color:${color};">${_expFmtQty(rem)}</span> ${uom}
+                <br><span style="font-size:0.64rem; font-weight:600; color:var(--text-dim);" title="Perkiraan sisa batch setelah dikurangi transaksi keluar (alokasi FIFO) — data asli tidak berubah">
+                    <i class="ph ph-arrow-elbow-down-right"></i> sisa FIFO · awal ${_expFmtQty(q)}
+                </span>`;
+        }
+
+        function renderExpMonthTable() {
+            const tbody = document.getElementById('exp-month-tbody');
+            if (!tbody) return;
+
+            const kw   = _expKeyword();
+            const rows = (globalExpData || []).filter(r => r && r.expDate && _expMatchKeyword(r, kw));
+            const jkt      = getJakartaDate();
+            const thisYear = jkt.getFullYear();
+            const nowYm    = thisYear + '-' + String(jkt.getMonth() + 1).padStart(2, '0');
+
+            // Pill tahun diambil dari tahun yang benar-benar ada datanya.
+            const years = [...new Set(rows.map(r => parseInt(r.expDate.slice(0, 4), 10)).filter(Boolean))].sort((a, b) => a - b);
+            if (_expTblYear === null || (_expTblYear !== 'ALL' && years.length && years.indexOf(_expTblYear) === -1)) {
+                _expTblYear = (years.indexOf(thisYear) !== -1 || !years.length) ? thisYear : years[0];
+            }
+            _expRenderYearPills(years, thisYear);
+
+            const shown = (_expTblYear === 'ALL')
+                ? rows
+                : rows.filter(r => parseInt(r.expDate.slice(0, 4), 10) === _expTblYear);
+
+            const byMonth = new Map();
+            shown.forEach(r => {
+                const ym = _expMonthKey(r.expDate);
+                if (!byMonth.has(ym)) byMonth.set(ym, []);
+                byMonth.get(ym).push(r);
+            });
+
+            const allKeys = [...byMonth.keys()].sort();
+            if (_expTblPeriode !== 'ALL' && allKeys.indexOf(_expTblPeriode) === -1) _expTblPeriode = 'ALL';
+            _expRenderPeriodSelect(allKeys, nowYm);
+
+            // Bulan lampau pada tahun berjalan disembunyikan supaya yang butuh
+            // tindakan langsung terlihat. Tidak dihapus: pilih di filter Periode.
+            let visKeys, hiddenPast = 0;
+            if (_expTblPeriode !== 'ALL') {
+                visKeys = allKeys.filter(ym => ym === _expTblPeriode);
+            } else {
+                visKeys = allKeys.filter(ym => {
+                    const lampauTahunIni = (parseInt(ym.slice(0, 4), 10) === thisYear) && (ym < nowYm);
+                    if (lampauTahunIni) { hiddenPast++; return false; }
+                    return true;
+                });
+            }
+
+            const visRows = visKeys.reduce((acc, ym) => acc.concat(byMonth.get(ym)), []);
+
+            const rst = document.getElementById('exp-filter-reset');
+            if (rst) rst.style.display = (_expTblPeriode !== 'ALL') ? '' : 'none';
+
+            const note = document.getElementById('exp-hidden-note');
+            if (note) {
+                if (hiddenPast > 0) {
+                    note.style.display = '';
+                    note.innerHTML = `<i class="ph ph-eye-slash"></i> ${hiddenPast} bulan lampau ${thisYear} disembunyikan · buka lewat Periode`;
+                } else {
+                    note.style.display = 'none';
+                    note.innerHTML = '';
+                }
+            }
+
+            let sExp = 0, sWeek = 0, sDone = 0;
+            visRows.forEach(r => {
+                if (r.status && r.status !== 'AKTIF') { sDone++; return; }
+                const d = _expDayDiff(r.expDate);
+                if (d < 0) sExp++; else if (d <= 7) sWeek++;
+            });
+            const sum = document.getElementById('exp-table-summary');
+            if (sum) {
+                sum.innerHTML = visRows.length
+                    ? `${visRows.length} batch · <b style="color:var(--red);">${sExp} expired</b> · <b style="color:var(--amber);">${sWeek} ≤ 7 hari</b> · ${sDone} selesai`
+                    : '';
+            }
+
+            if (!visKeys.length) {
+                let pesan;
+                if (kw)                  pesan = 'Tidak ada batch exp yang cocok dengan pencarian.';
+                else if (hiddenPast > 0) pesan = `Tidak ada batch exp dari bulan berjalan ke depan. ${hiddenPast} bulan lampau disembunyikan — buka lewat filter Periode.`;
+                else                     pesan = 'Belum ada data expired pada periode ini.';
+                tbody.innerHTML = `<tr><td colspan="7" class="em-empty">${pesan}</td></tr>`;
+                return;
+            }
+
+            const html = [];
+            _expSortMonthKeys(visKeys, thisYear).forEach(ym => {
+                const items = byMonth.get(ym).slice().sort((a, b) => {
+                    const c = (a.expDate || '').localeCompare(b.expDate || '');
+                    return c !== 0 ? c : stripCode(a.namaItem || '').localeCompare(stripCode(b.namaItem || ''), 'id');
+                });
+
+                let mExp = 0, mWeek = 0, mDone = 0;
+                items.forEach(r => {
+                    if (r.status && r.status !== 'AKTIF') { mDone++; return; }
+                    const d = _expDayDiff(r.expDate);
+                    if (d < 0) mExp++; else if (d <= 7) mWeek++;
+                });
+
+                const collapsed = _expCollapsedMonths.has(ym);
+                const isNow     = (ym === nowYm);
+                const isPast    = (ym < nowYm);
+                const meta = [
+                    `<span class="emh-chip">${items.length} batch</span>`,
+                    mExp  ? `<span class="cal-chip cal-chip-expired">${mExp} expired</span>` : '',
+                    mWeek ? `<span class="cal-chip cal-chip-soon">${mWeek} ≤ 7 hari</span>` : '',
+                    mDone ? `<span class="emh-chip">${mDone} selesai</span>` : ''
+                ].join('');
+                const tag = isNow ? '<span class="exp-now-tag">bulan ini</span>'
+                                  : (isPast ? '<span class="exp-past-tag">bulan lampau</span>' : '');
+
+                html.push(
+                    `<tr class="group-hdr"><td colspan="7">` +
+                        `<div class="exp-month-hdr${isNow ? ' is-now' : ''}${isPast ? ' is-past' : ''}" onclick="_expToggleMonth('${ym}')" title="Klik untuk melipat / membuka bulan ini">` +
+                            `<span class="emh-title"><i class="ph ${collapsed ? 'ph-caret-right' : 'ph-caret-down'}"></i>${_expMonthLabel(ym)}${tag}</span>` +
+                            `<span class="emh-meta">${meta}</span>` +
+                        `</div>` +
+                    `</td></tr>`
+                );
+                if (collapsed) return;
+
+                items.forEach(r => {
+                    const isDone = r.status && r.status !== 'AKTIF';
+                    const diff   = _expDayDiff(r.expDate);
+                    const expBadge = isDone
+                        ? `<span class="em-exp-done">${_fmtDateLabel(r.expDate)}</span>`
+                        : (diff < 0
+                            ? `<span class="cal-chip cal-chip-expired">${_fmtDateLabel(r.expDate)}</span>`
+                            : (diff <= 7
+                                ? `<span class="cal-chip cal-chip-soon">${_fmtDateLabel(r.expDate)}</span>`
+                                : `<span class="cal-chip cal-chip-ok">${_fmtDateLabel(r.expDate)}</span>`));
+                    html.push(
+                        `<tr style="cursor:pointer;" onclick="selectExpDay('${r.expDate}')" title="Klik untuk membuka detail tanggal ini (ubah status barang di panel detail)">` +
+                            `<td class="em-name${isDone ? ' is-done' : ''}">${_expEsc(stripCode(r.namaItem))}</td>` +
+                            `<td>${expBadge}</td>` +
+                            `<td class="em-mid">${_expSisaHariHtml(r, diff)}</td>` +
+                            `<td class="em-sub">${_expEsc(r.tanggal || '—')}</td>` +
+                            `<td class="mono">${_expEsc(r.altUom || '—')}</td>` +
+                            `<td class="em-qty">${_expQtyCellHtml(r)}</td>` +
+                            `<td class="em-mid"><span class="badge ${isDone ? 'badge-neutral' : 'badge-in'}">${_expEsc(r.status || 'AKTIF')}</span></td>` +
+                        `</tr>`
+                    );
+                });
+            });
+            tbody.innerHTML = html.join('');
+        }
+
+        // ===================== PANEL DETAIL =====================
+        function selectExpDay(dateStr) {
+            _selectedExpDate = dateStr;
+            renderCalendar();
+            renderExpDayPanel(dateStr);
+            const panel = document.getElementById('exp-day-panel');
+            if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function renderExpDayPanel(dateStr) {
+            const kw = _expKeyword();
+            const items = (_expByDate.get(dateStr) || [])
+                .filter(r => _expMatchKeyword(r, kw))
+                .slice()
+                .sort((a, b) => stripCode(a.namaItem || '').localeCompare(stripCode(b.namaItem || ''), 'id'));
+
+            const diff = _expDayDiff(dateStr);
+            const rel = diff < 0 ? ('expired ' + Math.abs(diff) + ' hari lalu')
+                      : (diff === 0 ? 'hari ini!' : diff + ' hari lagi');
+            _expPanelMode = { type: 'date', date: dateStr };
+            renderExpListPanel(items, 'Item Exp: ' + _fmtDateLabel(dateStr) + ' (' + rel + ')');
+        }
+
+        /** Kartu ringkasan diklik -> panel menampilkan daftar kategori itu. */
+        function showExpCategory(cat) {
+            _selectedExpDate = null;
+            const kw = _expKeyword();
+            const labelMap = {
+                expired: 'Sudah Expired',
+                week:    'Exp Hari Ini & ≤ 7 Hari ke Depan',
+                month:   'Exp 8–30 Hari ke Depan',
+                done:    'Ditandai Selesai (Habis / Tidak Ada / Retur)'
+            };
+            const items = globalExpData.filter(r => {
+                if (!_expMatchKeyword(r, kw)) return false;
+                const isDone = r.status && r.status !== 'AKTIF';
+                const diff   = _expDayDiff(r.expDate);
+                if (cat === 'done')    return isDone;
+                if (isDone)            return false;
+                if (cat === 'expired') return diff < 0;
+                if (cat === 'week')    return diff >= 0 && diff <= 7;
+                if (cat === 'month')   return diff > 7 && diff <= 30;
+                return false;
+            }).sort((a, b) => (a.expDate || '').localeCompare(b.expDate || ''));
+
+            _expPanelMode = { type: 'cat', cat: cat };
+            renderExpListPanel(items, labelMap[cat] || cat);
+            renderCalendar();
+            const panel = document.getElementById('exp-day-panel');
+            if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function _refreshExpPanel() {
+            if (!_expPanelMode) return;
+            if (_expPanelMode.type === 'date') renderExpDayPanel(_expPanelMode.date);
+            else showExpCategory(_expPanelMode.cat);
+        }
+
+        function _expStatusSelectClass(status) {
+            if (status === 'HABIS')     return 'exp-status-select st-habis';
+            if (status === 'TIDAK ADA') return 'exp-status-select st-tidakada';
+            if (status === 'RETUR')     return 'exp-status-select st-retur';
+            return 'exp-status-select';
+        }
+
+        function renderExpListPanel(items, label) {
+            _expPanelItems = items;
+            const panel = document.getElementById('exp-day-panel');
+            const tbody = document.getElementById('exp-day-tbody');
+            if (!panel || !tbody) return;
+
+            document.getElementById('exp-day-label').textContent = label;
+            document.getElementById('exp-day-count').textContent = items.length + ' batch';
+            panel.style.display = '';
+
+            const checkAll = document.getElementById('exp-check-all');
+            if (checkAll) checkAll.checked = false;
+            _updateBulkBar();
+
+            if (!items.length) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px; color:var(--text-dim); font-size:var(--fs-sm);">Tidak ada item pada tampilan ini.</td></tr>';
+                return;
+            }
+
+            const html = items.map(r => {
+                const keySafe = _expEsc(r.key || '');
+                const isDone  = r.status && r.status !== 'AKTIF';
+                const diff    = _expDayDiff(r.expDate);
+                const expBadge = isDone
+                    ? `<span class="em-exp-done">${_fmtDateLabel(r.expDate)}</span>`
+                    : (diff < 0
+                        ? `<span class="cal-chip cal-chip-expired">${_fmtDateLabel(r.expDate)}</span>`
+                        : (diff <= 7
+                            ? `<span class="cal-chip cal-chip-soon">${_fmtDateLabel(r.expDate)}</span>`
+                            : `<span class="cal-chip cal-chip-ok">${_fmtDateLabel(r.expDate)}</span>`));
+                const optionsHtml = EXP_STATUS_OPTIONS.map(o =>
+                    `<option value="${o.value}" ${o.value === (r.status || 'AKTIF') ? 'selected' : ''}>${o.label}</option>`
+                ).join('');
+                const updInfo = (r.updatedAt || r.updatedBy)
+                    ? `<span style="font-size:var(--fs-xs); color:var(--text-dim);">${_expEsc(r.updatedAt || '')}${r.updatedBy ? '<br>' + _expEsc(r.updatedBy) : ''}</span>`
+                    : '<span style="color:var(--text-dim);">—</span>';
+
+                return '<tr>' +
+                    `<td style="text-align:center;"><input type="checkbox" class="exp-row-check" data-key="${keySafe}" onchange="onExpCheckChange()" style="width:16px; height:16px; cursor:pointer; accent-color:var(--accent);"></td>` +
+                    `<td style="font-weight:700; color:var(--text); ${isDone ? 'text-decoration:line-through; opacity:0.55;' : ''}">${_expEsc(stripCode(r.namaItem))}</td>` +
+                    `<td>${expBadge}</td>` +
+                    `<td style="color:var(--text-muted); font-size:var(--fs-sm);">${_expEsc(r.tanggal || '—')}</td>` +
+                    `<td class="mono">${_expEsc(r.altUom || '—')}</td>` +
+                    `<td style="text-align:right; font-weight:700;">${_expQtyCellHtml(r)}</td>` +
+                    `<td style="text-align:center;"><select class="${_expStatusSelectClass(r.status)}" onchange="onExpStatusChange('${keySafe}', this)">${optionsHtml}</select></td>` +
+                    `<td>${updInfo}</td>` +
+                    '</tr>';
+            });
+            tbody.innerHTML = html.join('');
+        }
+
+        // ===================== PENANDAAN STATUS =====================
+        function toggleExpCheckAll(el) {
+            document.querySelectorAll('.exp-row-check').forEach(c => { c.checked = el.checked; });
+            _updateBulkBar();
+        }
+
+        function onExpCheckChange() {
+            const all      = document.querySelectorAll('.exp-row-check');
+            const checked  = document.querySelectorAll('.exp-row-check:checked');
+            const checkAll = document.getElementById('exp-check-all');
+            if (checkAll) checkAll.checked = all.length > 0 && checked.length === all.length;
+            _updateBulkBar();
+        }
+
+        function _updateBulkBar() {
+            const bar = document.getElementById('exp-bulk-bar');
+            if (!bar) return;
+            const checked = document.querySelectorAll('.exp-row-check:checked');
+            bar.style.display = checked.length ? 'flex' : 'none';
+            const cnt = document.getElementById('exp-bulk-count');
+            if (cnt) cnt.textContent = checked.length;
+        }
+
+        /** Patch lokal setelah server sukses — tanpa menarik ulang seluruh data. */
+        function _patchExpStatus(keys, status) {
+            const now = new Date();
+            const stamp = String(now.getDate()).padStart(2, '0') + '/' + String(now.getMonth() + 1).padStart(2, '0') + '/' +
+                          now.getFullYear() + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+            globalExpData.forEach(r => {
+                if (keys.has(r.key)) { r.status = status; r.updatedAt = stamp; }
+            });
+            renderExpStats();
+            updateExpAlerts();
+            renderCalendar();
+            if (_expView === 'table') renderExpMonthTable();
+            _refreshExpPanel();
+        }
+
+        function applyBulkExpStatus() {
+            const checkedEls = document.querySelectorAll('.exp-row-check:checked');
+            if (!checkedEls.length) return;
+
+            const keys  = new Set(Array.from(checkedEls).map(el => el.getAttribute('data-key')));
+            const items = _expPanelItems.filter(r => keys.has(r.key))
+                                        .map(r => ({ key: r.key, namaItem: r.namaItem, expDate: r.expDate }));
+            if (!items.length) return;
+
+            const status   = document.getElementById('exp-bulk-status').value;
+            const optLabel = (EXP_STATUS_OPTIONS.find(o => o.value === status) || {}).label || status;
+
+            Swal.fire({
+                title: 'Ubah Status Massal?',
+                html: `<div style="text-align:left; font-size:var(--fs-body); line-height:1.8;">
+                    <b>${items.length} item</b> akan ditandai sebagai <b style="color:var(--accent);">${optLabel}</b>.<br>
+                    <small style="color:var(--text-dim);">Data masuk asli TIDAK diubah — penandaan disimpan terpisah di Sheet EXP_STATUS.</small>
+                </div>`,
+                icon: 'question', showCancelButton: true,
+                confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
+                confirmButtonText: 'Ya, Terapkan', cancelButtonText: 'Batal',
+                background: 'var(--surface)', color: 'var(--text)'
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                serverCall({
+                    key: 'expStatus',
+                    fn: 'bulkUpdateExpStatus',
+                    args: [{ items, status }],
+                    replace: true,
+                    blocking: true,
+                    onSuccess: res => {
+                        _patchExpStatus(keys, status);
+                        Swal.fire({ title: 'Berhasil!', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
+                    },
+                    onError: msg => showAlert('Gagal', msg, 'error')
+                });
+            });
+        }
+
+        function onExpStatusChange(key, el) {
+            const row = globalExpData.find(r => r.key === key);
+            if (!row) return;
+            const newStatus = el.value;
+            const oldStatus = row.status || 'AKTIF';
+            if (newStatus === oldStatus) return;
+
+            const optLabel = (EXP_STATUS_OPTIONS.find(o => o.value === newStatus) || {}).label || newStatus;
+            Swal.fire({
+                title: 'Ubah Status Barang?',
+                html: `<div style="text-align:left; font-size:var(--fs-body); line-height:1.8;">
+                    <b>${_expEsc(stripCode(row.namaItem))}</b><br>
+                    Exp: ${_fmtDateLabel(row.expDate)} · QTY ${_expFmtQty(row.qty)} ${_expEsc(row.uom || '')}<br>
+                    Status baru: <b style="color:var(--accent);">${optLabel}</b><br>
+                    <small style="color:var(--text-dim);">Data masuk asli TIDAK diubah — penandaan disimpan terpisah di Sheet EXP_STATUS.</small>
+                </div>`,
+                icon: 'question', showCancelButton: true,
+                confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
+                confirmButtonText: 'Ya, Simpan', cancelButtonText: 'Batal',
+                background: 'var(--surface)', color: 'var(--text)'
+            }).then(result => {
+                if (!result.isConfirmed) { el.value = oldStatus; return; }
+                serverCall({
+                    key: 'expStatus',
+                    fn: 'updateExpStatus',
+                    args: [{ key: key, namaItem: row.namaItem, expDate: row.expDate, status: newStatus }],
+                    replace: true,
+                    blocking: true,
+                    onSuccess: () => _patchExpStatus(new Set([key]), newStatus),
+                    onError: msg => { el.value = oldStatus; showAlert('Gagal', msg, 'error'); }
+                });
+            });
+        }
+
     </script>
 </body>
 </html>
