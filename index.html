@@ -317,6 +317,31 @@
         }
         .opname-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
         .opname-input.filled { border-color:var(--accent); background:var(--accent-soft); }
+        /* Item yang sudah pernah di-opname pada TANGGAL & NAMA yang sama:
+           nilainya diambil dari arsip Laporan Opname (bukan isian baru). */
+        .opname-input.saved { border-color:#6d28d9; background:#f5f3ff; color:#4c1d95; }
+        .opname-input.saved:focus { border-color:#6d28d9; box-shadow:0 0 0 3px rgba(109,40,217,0.16); }
+        tr.opn-done { background:rgba(109, 40, 217, 0.045); }
+        tr.opn-done:hover { background:rgba(109, 40, 217, 0.085); }
+        .badge-done { background:#f5f3ff; color:#6d28d9; border:1px solid rgba(109,40,217,0.25); }
+        .chip.done { background:#f5f3ff; color:#6d28d9; border-color:rgba(109,40,217,0.25); }
+        .opn-saved-hint {
+            display:block; font-size:var(--fs-xs); font-weight:700; color:#6d28d9;
+            margin-top:3px; letter-spacing:0.01em;
+        }
+
+        /* ---------- Aksi baris (Edit / Hapus) Laporan Opname ---------- */
+        .row-act { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+        .btn-row {
+            display:inline-flex; align-items:center; justify-content:center;
+            width:32px; height:32px; border-radius:8px; cursor:pointer; line-height:1;
+            border:1px solid rgba(15, 118, 110, 0.25); background:var(--accent-soft);
+            color:var(--accent); font-size:1.02rem;
+            transition:transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .btn-row:hover { transform:translateY(-1px); box-shadow:0 3px 10px rgba(15,118,110,0.18); }
+        .btn-row.danger { border-color:rgba(220, 38, 38, 0.25); background:var(--red-soft); color:var(--red); }
+        .btn-row.danger:hover { box-shadow:0 3px 10px rgba(220,38,38,0.18); }
 
         .chip {
             display:inline-flex; align-items:center; gap:6px; padding:7px 13px; border-radius:99px;
@@ -1379,6 +1404,7 @@
                             <span class="chip acc"><i class="ph ph-check-circle"></i> Sudah Dihitung <span class="n" id="opn-c-counted">0</span></span>
                             <span class="chip pos"><i class="ph ph-arrow-up"></i> Selisih + <span class="n" id="opn-c-plus">0</span></span>
                             <span class="chip neg"><i class="ph ph-arrow-down"></i> Selisih − <span class="n" id="opn-c-minus">0</span></span>
+                            <span class="chip done" id="opn-chip-done" style="display:none;"><i class="ph ph-seal-check"></i> Sudah Opname <span class="n" id="opn-c-done">0</span></span>
                         </div>
                     </div>
                     <div style="overflow-x:auto; max-height:520px; overflow-y:auto;">
@@ -1499,10 +1525,11 @@
                                 <th style="text-align:center;">Jenis</th>
                                 <th>Petugas</th>
                                 <th>Catatan</th>
+                                <th class="no-print" style="text-align:center; width:96px;">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="laporan-tbody">
-                            <tr><td colspan="9" style="text-align:center; padding:44px; color:var(--text-dim); font-size:var(--fs-sm);">Belum ada laporan opname.</td></tr>
+                            <tr><td colspan="10" style="text-align:center; padding:44px; color:var(--text-dim); font-size:var(--fs-sm);">Belum ada laporan opname.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1573,6 +1600,7 @@
         let opnameSnapshot   = [];   // [{namaItem, uom, altUom, sistem, fisik, catatan}]
         let globalOpnameReport = [];
         let opnameReportSummary = null;
+        let _opnameRowById = new Map();   // ID Opname -> baris laporan (untuk Edit / Hapus)
 
         // Draft Stock Opname
         let opnameDraftId     = null;   // draft yang sedang dikerjakan
@@ -2873,13 +2901,46 @@
 
         // ---------- PERIODE: tampilan "Agustus 2026", internal tetap "2026-08" ----------
 
-        /** '2026-08' -> 'Agustus 2026'. Raw key tidak pernah tampil ke user. */
+        /**
+         * '2026-08' -> 'Agustus 2026'. Raw key tidak pernah tampil ke user.
+         *
+         * PERBAIKAN BUG: nilai Periode yang tersimpan di sheet bisa terlanjur
+         * berubah menjadi TANGGAL oleh Google Sheets, sehingga yang sampai ke
+         * sini berupa "Sat Aug 01 2026 14:00:00 GMT+0700 (...)" dan dulu tampil
+         * apa adanya di dropdown. Sekarang bentuk apa pun (Date, 'YYYY-MM',
+         * 'YYYY-MM-DD', teks tanggal panjang) selalu diringkas menjadi
+         * Bulan + Tahun saja.
+         */
         function formatPeriodeLabel(key) {
-            if (!key) return '';
-            const p = key.toString().split('-');
-            if (p.length < 2) return key;
+            if (!key && key !== 0) return '';
+            const norm = normPeriodeKey(key);
+            if (!norm) return '';
+            const p = norm.split('-');
+            if (p.length < 2) return norm;
             const idx = parseInt(p[1], 10) - 1;
             return `${BULAN[idx] || p[1]} ${p[0]}`;
+        }
+
+        /** Bentuk apa pun -> kunci periode baku 'YYYY-MM' (cermin normPeriodeKey_ di backend). */
+        function normPeriodeKey(v) {
+            if (v === null || v === undefined || v === '') return '';
+            if (v instanceof Date) {
+                const m = v.getMonth() + 1;
+                return `${v.getFullYear()}-${m < 10 ? '0' + m : m}`;
+            }
+            const raw = v.toString().trim();
+            if (!raw) return '';
+            const m = raw.match(/^(\d{4})-(\d{1,2})(?!\d)/);
+            if (m) {
+                const mm = parseInt(m[2], 10);
+                if (mm >= 1 && mm <= 12) return `${m[1]}-${mm < 10 ? '0' + mm : mm}`;
+            }
+            const t = new Date(raw);
+            if (!isNaN(t.getTime())) {
+                const mm = t.getMonth() + 1;
+                return `${t.getFullYear()}-${mm < 10 ? '0' + mm : mm}`;
+            }
+            return raw;
         }
 
         /** Key internal periode yang sedang aktif ('YYYY-MM'). */
@@ -2943,11 +3004,27 @@
                 onSuccess: res => {
                     opnameSnapshot = (res.data || []).map(it => {
                         const old = prev.get(it.namaItem);
+                        // Prioritas isian Stock Fisik:
+                        //   1. isian operator yang sedang berjalan (tidak boleh hilang)
+                        //   2. nilai yang SUDAH TERSIMPAN di Laporan Opname pada
+                        //      tanggal & nama item yang sama  <-- penanda "sudah di-opname"
+                        //   3. kosong
+                        const adaIsianLama = old && old.fisik !== '' && old.fisik !== null && !isNaN(parseFloat(old.fisik));
+                        const fisikAwal = adaIsianLama ? old.fisik
+                                        : (it.sudahOpname ? it.fisikTersimpan : '');
+                        const catatanAwal = (old && old.catatan) ? old.catatan
+                                          : (it.sudahOpname ? (it.catatanTersimpan || '') : '');
                         return buildSnapshotItem({
                             namaItem: it.namaItem, uom: it.uom || '', altUom: it.altUom || '',
                             sistem: parseFloat(it.sistem) || 0,
-                            fisik: old ? old.fisik : '',
-                            catatan: old ? old.catatan : ''
+                            fisik: fisikAwal,
+                            catatan: catatanAwal,
+                            sudahOpname: it.sudahOpname,
+                            opnameId: it.opnameId,
+                            fisikTersimpan: it.fisikTersimpan,
+                            selisihTersimpan: it.selisihTersimpan,
+                            petugasTersimpan: it.petugasTersimpan,
+                            catatanTersimpan: it.catatanTersimpan
                         });
                     });
                     renderOpnameTable();
@@ -2955,6 +3032,10 @@
                         showAlert('Info', 'Tidak ada item aktif untuk dihitung.', 'info');
                     } else if (prev.size) {
                         markDraftDirty();   // sistem berubah -> perlu disimpan ulang
+                    }
+                    const sudah = res.sudahOpname || 0;
+                    if (sudah > 0) {
+                        showToastOpname(`${sudah} item sudah pernah di-opname pada tanggal ini — nilai tersimpannya ikut ditampilkan.`);
                     }
                 },
                 onError: msg => {
@@ -2974,9 +3055,73 @@
                 sistem: parseFloat(src.sistem) || 0,   // SNAPSHOT — tidak dihitung ulang saat mengetik
                 fisik: (src.fisik === null || src.fisik === undefined) ? '' : src.fisik,
                 catatan: src.catatan || '',
+                // PARAMETER "SUDAH DI-OPNAME": terisi bila TANGGAL cut-off dan
+                // NAMA ITEM sudah ada di Laporan Opname (dikirim backend).
+                sudahOpname: !!src.sudahOpname,
+                opnameId: src.opnameId || '',
+                fisikTersimpan: (src.fisikTersimpan === null || src.fisikTersimpan === undefined) ? '' : src.fisikTersimpan,
+                selisihTersimpan: (src.selisihTersimpan === null || src.selisihTersimpan === undefined) ? '' : src.selisihTersimpan,
+                petugasTersimpan: src.petugasTersimpan || '',
+                catatanTersimpan: src.catatanTersimpan || '',
                 _label: label,
                 _search: label.toLowerCase()
             };
+        }
+
+        /** Dua angka dianggap sama bila selisihnya di bawah 0,005 (2 desimal). */
+        function _sameNum(a, b) {
+            const x = parseFloat(a), y = parseFloat(b);
+            if (isNaN(x) || isNaN(y)) return false;
+            return Math.abs(x - y) < 0.005;
+        }
+
+        /** Item sudah di-opname pada tanggal ini DAN nilainya belum diubah operator. */
+        function isOpnameTersimpan(it) {
+            return !!it.sudahOpname && _sameNum(it.fisik, it.fisikTersimpan);
+        }
+
+        /**
+         * Tampilan satu baris lembar perhitungan: teks selisih, warna, badge
+         * status, dan kelas input. Dipakai BERSAMA oleh renderOpnameTable() dan
+         * setOpnameFisik() supaya tampilan saat render dan saat mengetik sama.
+         */
+        function opnamePresentasi(it) {
+            const sistem = parseFloat(it.sistem) || 0;
+            const hasVal = it.fisik !== '' && it.fisik !== null && it.fisik !== undefined && !isNaN(parseFloat(it.fisik));
+            if (!hasVal) {
+                return {
+                    hasVal: false, selisih: null, selTxt: '—', selColor: 'var(--text-dim)',
+                    stHtml: '<span class="badge badge-neutral">Belum</span>',
+                    inputClass: 'opname-input', tersimpan: false
+                };
+            }
+            const tersimpan = isOpnameTersimpan(it);
+            const selisih = parseFloat((parseFloat(it.fisik) - sistem).toFixed(2));
+            const stHtml = tersimpan
+                ? '<span class="badge badge-done"><i class="ph ph-seal-check"></i> SUDAH OPNAME</span>'
+                : (selisih > 0 ? '<span class="badge badge-in">MASUK</span>'
+                 : selisih < 0 ? '<span class="badge badge-out">KELUAR</span>'
+                 : '<span class="badge badge-init">SESUAI</span>');
+            return {
+                hasVal: true,
+                selisih: selisih,
+                selTxt: (selisih > 0 ? '+' : '') + selisih.toFixed(2),
+                selColor: selisih > 0 ? 'var(--green)' : (selisih < 0 ? 'var(--red)' : 'var(--text-muted)'),
+                stHtml: stHtml,
+                inputClass: 'opname-input ' + (tersimpan ? 'saved' : 'filled'),
+                tersimpan: tersimpan
+            };
+        }
+
+        /** Toast ringkas (pojok kanan atas) untuk info lembar opname. */
+        function showToastOpname(text) {
+            try {
+                Swal.fire({
+                    toast: true, position: 'top-end', timer: 3600, timerProgressBar: true,
+                    showConfirmButton: false, icon: 'info', title: text,
+                    background: 'var(--surface)', color: 'var(--text)'
+                });
+            } catch (e) { console.error(e); }
         }
 
         function setOpnameFisik(idx, val) {
@@ -2986,25 +3131,12 @@
             const selEl = document.getElementById('opn-sel-' + idx);
             const stEl  = document.getElementById('opn-st-' + idx);
             const inpEl = document.getElementById('opn-inp-' + idx);
-            const sistem = parseFloat(opnameSnapshot[idx].sistem) || 0;
+            const p = opnamePresentasi(opnameSnapshot[idx]);
 
-            if (val === '' || val === null || isNaN(parseFloat(val))) {
-                if (selEl) { selEl.textContent = '—'; selEl.style.color = 'var(--text-dim)'; }
-                if (stEl)  stEl.innerHTML = '<span class="badge badge-neutral">Belum</span>';
-                if (inpEl) inpEl.classList.remove('filled');
-            } else {
-                const selisih = parseFloat((parseFloat(val) - sistem).toFixed(2));
-                if (inpEl) inpEl.classList.add('filled');
-                if (selEl) {
-                    selEl.textContent = (selisih > 0 ? '+' : '') + selisih.toFixed(2);
-                    selEl.style.color = selisih > 0 ? 'var(--green)' : (selisih < 0 ? 'var(--red)' : 'var(--text-muted)');
-                }
-                if (stEl) {
-                    stEl.innerHTML = selisih > 0 ? '<span class="badge badge-in">MASUK</span>'
-                                   : selisih < 0 ? '<span class="badge badge-out">KELUAR</span>'
-                                   : '<span class="badge badge-init">SESUAI</span>';
-                }
-            }
+            if (selEl) { selEl.textContent = p.selTxt; selEl.style.color = p.selColor; }
+            if (stEl)  stEl.innerHTML = p.stHtml;
+            if (inpEl) inpEl.className = p.inputClass;
+
             updateOpnameSummary();
             markDraftDirty();   // AUTOSAVE (silent, debounce ~1 detik)
         }
@@ -3032,30 +3164,29 @@
                 if (keyword && !(it._search !== undefined ? it._search : stripCode(it.namaItem).toLowerCase()).includes(keyword)) return;
                 shown++;
                 const sistem = parseFloat(it.sistem) || 0;
-                const hasVal = it.fisik !== '' && it.fisik !== null && !isNaN(parseFloat(it.fisik));
-                const selisih = hasVal ? parseFloat((parseFloat(it.fisik) - sistem).toFixed(2)) : null;
+                const p = opnamePresentasi(it);
 
-                let selTxt = '—', selColor = 'var(--text-dim)', stHtml = '<span class="badge badge-neutral">Belum</span>';
-                if (hasVal) {
-                    selTxt = (selisih > 0 ? '+' : '') + selisih.toFixed(2);
-                    selColor = selisih > 0 ? 'var(--green)' : (selisih < 0 ? 'var(--red)' : 'var(--text-muted)');
-                    stHtml = selisih > 0 ? '<span class="badge badge-in">MASUK</span>'
-                           : selisih < 0 ? '<span class="badge badge-out">KELUAR</span>'
-                           : '<span class="badge badge-init">SESUAI</span>';
-                }
+                // Penanda item yang TANGGAL & NAMA-nya sudah ada di Laporan Opname:
+                // nilai fisik tersimpannya ditampilkan langsung di bawah nama item.
+                const hint = it.sudahOpname
+                    ? `<span class="opn-saved-hint"><i class="ph ph-seal-check"></i> Opname tersimpan:
+                        ${(parseFloat(it.fisikTersimpan) || 0).toFixed(2)}${it.uom ? ' ' + _expEsc(it.uom) : ''}
+                        ${it.selisihTersimpan !== '' ? `· selisih ${(parseFloat(it.selisihTersimpan) || 0) > 0 ? '+' : ''}${(parseFloat(it.selisihTersimpan) || 0).toFixed(2)}` : ''}</span>`
+                    : '';
 
                 const tr = document.createElement('tr');
+                if (p.tersimpan) tr.className = 'opn-done';
                 tr.innerHTML = `
                     <td style="text-align:center; color:var(--text-dim); font-size:0.78rem; font-weight:600;">${idx+1}</td>
-                    <td style="font-weight:700; color:var(--text);">${it._label !== undefined ? it._label : stripCode(it.namaItem)}</td>
+                    <td style="font-weight:700; color:var(--text);">${it._label !== undefined ? it._label : stripCode(it.namaItem)}${hint}</td>
                     <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${it.uom || '—'}</td>
                     <td style="text-align:right; font-weight:700; color:var(--blue); font-family:'JetBrains Mono',monospace;">${sistem.toFixed(2)}</td>
                     <td style="text-align:right;">
-                        <input type="number" step="0.01" id="opn-inp-${idx}" class="opname-input${hasVal?' filled':''}" placeholder="0.00"
-                            value="${hasVal ? it.fisik : ''}" oninput="setOpnameFisik(${idx}, this.value)">
+                        <input type="number" step="0.01" id="opn-inp-${idx}" class="${p.inputClass}" placeholder="0.00"
+                            value="${p.hasVal ? it.fisik : ''}" oninput="setOpnameFisik(${idx}, this.value)">
                     </td>
-                    <td id="opn-sel-${idx}" style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${selColor};">${selTxt}</td>
-                    <td id="opn-st-${idx}" style="text-align:center;">${stHtml}</td>`;
+                    <td id="opn-sel-${idx}" style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${p.selColor};">${p.selTxt}</td>
+                    <td id="opn-st-${idx}" style="text-align:center;">${p.stHtml}</td>`;
                 frag.appendChild(tr);
             });
 
@@ -3071,8 +3202,9 @@
         }
 
         function updateOpnameSummary() {
-            let counted = 0, plus = 0, minus = 0;
+            let counted = 0, plus = 0, minus = 0, sudah = 0;
             opnameSnapshot.forEach(it => {
+                if (it.sudahOpname) sudah++;
                 const hasVal = it.fisik !== '' && it.fisik !== null && !isNaN(parseFloat(it.fisik));
                 if (!hasVal) return;
                 counted++;
@@ -3083,6 +3215,10 @@
             document.getElementById('opn-c-counted').textContent = counted;
             document.getElementById('opn-c-plus').textContent    = plus;
             document.getElementById('opn-c-minus').textContent   = minus;
+            const chipDone = document.getElementById('opn-chip-done');
+            const cDone = document.getElementById('opn-c-done');
+            if (cDone) cDone.textContent = sudah;
+            if (chipDone) chipDone.style.display = sudah > 0 ? '' : 'none';
             document.getElementById('btn-process-opname').disabled = counted === 0 || opnameDraftStatus === 'PROCESSED';
             const btnDraft = document.getElementById('btn-save-draft');
             if (btnDraft) btnDraft.disabled = opnameSnapshot.length === 0 || opnameDraftStatus === 'PROCESSED';
@@ -3173,6 +3309,53 @@
             renderDraftBanner();
             document.getElementById('btn-delete-draft').style.display = '';
             setDraftStatusText('saved', `✓ Draft dimuat · tersimpan ${fmtJam(d.updatedAt)}`);
+
+            // Draft tidak menyimpan penanda "sudah di-opname" (draft memang tidak
+            // pernah menyentuh Sheet OPNAME), jadi penandanya diambil ulang di sini
+            // agar item yang sudah tercatat tetap terlihat setelah draft dilanjutkan.
+            loadOpnameMarkers(d.tanggal);
+        }
+
+        /**
+         * Ambil penanda "SUDAH DI-OPNAME" untuk tanggal cut-off tertentu lalu
+         * tempelkan ke opnameSnapshot. Tidak mengubah satu pun angka Stock Sistem
+         * maupun isian Stock Fisik yang sedang dikerjakan.
+         */
+        function loadOpnameMarkers(tanggal) {
+            if (!tanggal || !opnameSnapshot.length) return false;
+            return serverCall({
+                fn: 'getOpnameMarkers',
+                args: [tanggal],
+                quiet: true,
+                onSuccess: res => {
+                    const peta = new Map();
+                    (res.data || []).forEach(m => peta.set(normItemKey(m.namaItem), m));
+                    if (!peta.size) return;
+
+                    let sudah = 0;
+                    opnameSnapshot.forEach(it => {
+                        const m = peta.get(normItemKey(it.namaItem));
+                        if (!m) return;
+                        sudah++;
+                        it.sudahOpname      = true;
+                        it.opnameId         = m.opnameId || '';
+                        it.fisikTersimpan   = m.fisikTersimpan;
+                        it.selisihTersimpan = m.selisihTersimpan;
+                        it.petugasTersimpan = m.petugasTersimpan || '';
+                        it.catatanTersimpan = m.catatanTersimpan || '';
+                        // Stock Fisik yang masih kosong diisi nilai tersimpannya.
+                        const kosong = it.fisik === '' || it.fisik === null || isNaN(parseFloat(it.fisik));
+                        if (kosong) it.fisik = m.fisikTersimpan;
+                    });
+                    if (sudah > 0) renderOpnameTable();
+                },
+                onError: () => {}   // penanda gagal dimuat tidak boleh mengganggu opname
+            });
+        }
+
+        /** Kunci pencocokan nama item (cermin normItemName_ di backend). */
+        function normItemKey(v) {
+            return v ? v.toString().trim().replace(/\s+/g, ' ').toUpperCase() : '';
         }
 
         /** BUAT BARU — draft lama dibuang setelah konfirmasi eksplisit. */
@@ -3324,33 +3507,74 @@
             const counted = opnameSnapshot.filter(it => it.fisik !== '' && it.fisik !== null && !isNaN(parseFloat(it.fisik)));
             if (!counted.length) return showAlert('Perhatian', 'Isi minimal satu Stock Fisik untuk diproses.', 'warning');
 
-            let plus = 0, minus = 0, sesuai = 0;
-            counted.forEach(it => {
-                const s = parseFloat(it.fisik) - (parseFloat(it.sistem) || 0);
-                if (s > 0) plus++; else if (s < 0) minus++; else sesuai++;
-            });
+            // Item yang SUDAH tercatat di Laporan Opname pada tanggal ini dan
+            // nilainya belum diubah operator. Memprosesnya lagi hanya membuat
+            // baris arsip duplikat berselisih 0 — jadi secara bawaan dilewati,
+            // tetapi operator tetap boleh menyertakannya lewat centang di bawah.
+            const ulangList = counted.filter(isOpnameTersimpan);
+            const baruList  = counted.filter(it => !isOpnameTersimpan(it));
+
+            const hitung = (list) => {
+                let plus = 0, minus = 0, sesuai = 0;
+                list.forEach(it => {
+                    const s = parseFloat(it.fisik) - (parseFloat(it.sistem) || 0);
+                    if (s > 0) plus++; else if (s < 0) minus++; else sesuai++;
+                });
+                return { plus, minus, sesuai, total: list.length };
+            };
+            const ringkasHtml = (list) => {
+                const r = hitung(list);
+                return `Item dihitung: <b>${r.total}</b><br>
+                    <span style="color:var(--green);">▲ Adjustment Masuk: <b>${r.plus}</b> item</span><br>
+                    <span style="color:var(--red);">▼ Adjustment Keluar: <b>${r.minus}</b> item</span><br>
+                    <span style="color:var(--text-dim);">● Sesuai: ${r.sesuai} item</span>`;
+            };
+
+            const blokUlang = ulangList.length ? `
+                <label style="display:flex; gap:8px; align-items:flex-start; margin-top:12px; padding:10px 12px;
+                       background:#f5f3ff; border:1px solid rgba(109,40,217,0.25); border-radius:10px;
+                       font-size:0.82rem; color:#4c1d95; cursor:pointer; text-align:left; line-height:1.55;">
+                    <input type="checkbox" id="swal-opn-skip" checked style="margin-top:3px;">
+                    <span>Lewati <b>${ulangList.length} item</b> yang sudah di-opname pada tanggal ini
+                    dan nilainya belum diubah.</span>
+                </label>` : '';
 
             Swal.fire({
                 title: 'Proses Stock Opname?',
                 html: `<div style="text-align:left; font-size:0.88rem; color:var(--text-muted); line-height:1.7;">
                     Periode: <b style="color:var(--text);">${document.getElementById('opn-periode').value}</b><br>
-                    Item dihitung: <b>${counted.length}</b><br>
-                    <span style="color:var(--green);">▲ Adjustment Masuk: <b>${plus}</b> item</span><br>
-                    <span style="color:var(--red);">▼ Adjustment Keluar: <b>${minus}</b> item</span><br>
-                    <span style="color:var(--text-dim);">● Sesuai: ${sesuai} item</span>
-                </div>`,
+                    <span id="swal-opn-ringkas">${ringkasHtml(ulangList.length ? baruList : counted)}</span>
+                </div>${blokUlang}`,
                 icon: 'question', showCancelButton: true,
                 confirmButtonText: 'Ya, Proses', cancelButtonText: 'Batal',
                 confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
-                background: 'var(--surface)', color: 'var(--text)'
+                background: 'var(--surface)', color: 'var(--text)',
+                didOpen: () => {
+                    const cb = document.getElementById('swal-opn-skip');
+                    if (!cb) return;
+                    cb.addEventListener('change', () => {
+                        document.getElementById('swal-opn-ringkas').innerHTML =
+                            ringkasHtml(cb.checked ? baruList : counted);
+                    });
+                },
+                preConfirm: () => {
+                    const cb = document.getElementById('swal-opn-skip');
+                    const dipilih = (cb && cb.checked) ? baruList : counted;
+                    if (!dipilih.length) {
+                        Swal.showValidationMessage('Semua item sudah di-opname pada tanggal ini. Ubah nilainya atau hilangkan centang untuk memproses ulang.');
+                        return false;
+                    }
+                    return dipilih;
+                }
             }).then(result => {
                 if (!result.isConfirmed) return;
+                const itemsDiproses = result.value;
                 // Blocking loader DIPERTAHANKAN: proses final harus ditunggu.
                 // LockService + pengecekan status draft ada di sisi backend.
                 serverCall({
                     key: 'opnameFinal',
                     fn: 'saveOpnameData',
-                    args: [{ tanggal, periode, petugas, draftId: opnameDraftId || '', items: counted }],
+                    args: [{ tanggal, periode, petugas, draftId: opnameDraftId || '', items: itemsDiproses }],
                     blocking: true,
                     alertOnError: true,
                     onSuccess: res => {
@@ -3399,20 +3623,28 @@
                 quiet: true,
                 onSuccess: res => {
                     const sel = document.getElementById('laporan-periode');
-                    const current = sel.value;
+                    const current = normPeriodeKey(sel.value);
                     const frag = document.createDocumentFragment();   // BOOSTER
                     const optAll = document.createElement('option');
                     optAll.value = ''; optAll.textContent = 'Semua Periode';
                     frag.appendChild(optAll);
+
+                    // Nilai dinormalisasi ke 'YYYY-MM' lalu di-dedupe: satu bulan
+                    // hanya boleh muncul SEKALI walau data lama tersimpan dalam
+                    // beberapa bentuk (teks 'YYYY-MM' maupun tanggal penuh).
+                    const seen = new Set();
                     (res.data || []).forEach(p => {
+                        const key = normPeriodeKey(p);
+                        if (!key || seen.has(key)) return;
+                        seen.add(key);
                         const o = document.createElement('option');
-                        o.value = p;                       // internal: 2026-08
-                        o.textContent = formatPeriodeLabel(p);  // UI: Agustus 2026
+                        o.value = key;                          // internal: 2026-08
+                        o.textContent = formatPeriodeLabel(key);// UI: Agustus 2026
                         frag.appendChild(o);
                     });
                     sel.innerHTML = '';
                     sel.appendChild(frag);
-                    sel.value = current;
+                    sel.value = seen.has(current) ? current : '';
                 },
                 onError: () => {},   // dropdown periode gagal tidak boleh mengganggu apa pun
                 onSettled: opt.onSettled
@@ -3431,7 +3663,7 @@
             const periode = document.getElementById('laporan-periode').value;
             const tbody = document.getElementById('laporan-tbody');
             if (opt.userInitiated && tbody) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Memuat laporan…</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Memuat laporan…</td></tr>';
             }
             return serverCall({
                 key: 'opnameReport',
@@ -3495,7 +3727,8 @@
 
             const filtered = globalOpnameReport.filter(r => _rowKey(r).includes(keyword));
             if (!filtered.length) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Belum ada laporan opname pada filter ini.</td></tr>';
+                _opnameRowById = new Map();
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Belum ada laporan opname pada filter ini.</td></tr>';
                 return;
             }
 
@@ -3503,12 +3736,16 @@
             let currentGroup = '', groupId = 0;
             const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
 
+            // Index ID Opname -> baris, dipakai modal Edit agar tidak perlu
+            // mengirim seluruh nilai baris lewat atribut onclick.
+            _opnameRowById = new Map();
+
             filtered.forEach(row => {
                 if (row.tanggalGroup !== currentGroup) {
                     currentGroup = row.tanggalGroup; groupId++;
                     const gtr = document.createElement('tr');
                     gtr.className = 'group-hdr grp-laporan-print';
-                    gtr.innerHTML = `<td colspan="9"><div class="group-hdr-inner" style="cursor:default;">
+                    gtr.innerHTML = `<td colspan="10"><div class="group-hdr-inner" style="cursor:default;">
                         <span style="font-size:0.825rem; font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px;">
                             <i class="ph ph-calendar-check" style="font-size:1.15rem;"></i> ${currentGroup}
                         </span>
@@ -3522,6 +3759,18 @@
                                  : row.jenis === 'KELUAR' ? '<span class="badge badge-out">KELUAR</span>'
                                  : '<span class="badge badge-init">SESUAI</span>';
 
+                // Kolom Aksi — hanya muncul di layar (disembunyikan saat cetak).
+                const rowId = row.id ? row.id.toString() : '';
+                if (rowId) _opnameRowById.set(rowId, row);
+                const argId = _jsArg(rowId);
+                const aksiTd = rowId
+                    ? `<td class="no-print" style="text-align:center;">
+                        <span class="row-act">
+                            <button type="button" class="btn-row" title="Edit hasil opname" onclick="editOpnameEntry('${argId}')"><i class="ph ph-pencil-simple"></i></button>
+                            <button type="button" class="btn-row danger" title="Hapus baris opname" onclick="deleteOpnameEntryUI('${argId}')"><i class="ph ph-trash"></i></button>
+                        </span></td>`
+                    : `<td class="no-print" style="text-align:center; color:var(--text-dim); font-size:0.78rem;">—</td>`;
+
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.tanggal}</td>
@@ -3532,11 +3781,163 @@
                     <td style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${sel>0?'var(--green)':(sel<0?'var(--red)':'var(--text-muted)')};">${sel>0?'+':''}${sel.toFixed(2)}</td>
                     <td style="text-align:center;">${jenisBadge}</td>
                     <td style="color:var(--text-muted); font-size:0.8rem;">${row.petugas || '—'}</td>
-                    <td style="color:var(--text-dim); font-size:0.78rem;">${row.catatan || '—'}</td>`;
+                    <td style="color:var(--text-dim); font-size:0.78rem;">${row.catatan || '—'}</td>
+                    ${aksiTd}`;
                 frag.appendChild(tr);
             });
             tbody.innerHTML = '';      // BOOSTER: satu kali clear
             tbody.appendChild(frag);   // BOOSTER: satu kali insert
+        }
+
+        // ---------- EDIT & HAPUS BARIS LAPORAN OPNAME ----------
+        //
+        // Satu baris laporan selalu berpasangan dengan adjustment-nya di Data
+        // Masuk / Data Keluar. Backend (updateOpnameEntry / deleteOpnameEntry)
+        // yang merawat pasangan itu, sehingga aturan pokok opname tetap berlaku:
+        // stock SISTEM mengikuti stock FISIK hasil opname.
+        //
+        // Stock Sistem TIDAK bisa diubah dari sini — angkanya adalah snapshot
+        // perhitungan pada tanggal cut-off, bukan input operator.
+
+        /** Nilai aman untuk disisipkan sebagai argumen string di atribut onclick. */
+        function _jsArg(v) {
+            return _expEsc(v).replace(/'/g, "\\'");
+        }
+
+        /** Ubah Stock Fisik / Petugas / Catatan pada satu baris laporan opname. */
+        function editOpnameEntry(id) {
+            const row = _opnameRowById.get(id);
+            if (!row) return showAlert('Perhatian', 'Baris opname tidak ditemukan. Muat ulang laporan lalu coba lagi.', 'warning');
+
+            const sistem = parseFloat(row.sistem) || 0;
+            const fisik  = parseFloat(row.fisik) || 0;
+
+            Swal.fire({
+                title: 'Edit Hasil Opname',
+                html: `
+                <div style="text-align:left; font-size:0.85rem; color:var(--text-muted); line-height:1.6; margin-bottom:12px;">
+                    <b style="color:var(--text); font-size:0.95rem;">${_expEsc(_rowLabel(row))}</b><br>
+                    ${_expEsc(row.tanggal || '')} &middot; ${_expEsc(formatPeriodeLabel(row.periode))} &middot; Stock Sistem
+                    <b style="color:var(--blue); font-family:'JetBrains Mono',monospace;">${sistem.toFixed(2)}</b>
+                </div>
+                <div style="text-align:left; margin-bottom:12px;">
+                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Stock Fisik</label>
+                    <input type="number" id="swal-opn-fisik" step="0.01" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${fisik}">
+                    <div id="swal-opn-preview" style="font-size:0.8rem; font-weight:700; margin-top:8px;"></div>
+                </div>
+                <div style="text-align:left; margin-bottom:12px;">
+                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Petugas / PIC</label>
+                    <input type="text" id="swal-opn-petugas" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${_expEsc(row.petugas || '')}">
+                </div>
+                <div style="text-align:left;">
+                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Catatan</label>
+                    <input type="text" id="swal-opn-catatan" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${_expEsc(row.catatan || '')}">
+                </div>
+                <p style="font-size:0.75rem; color:var(--text-dim); text-align:left; margin-top:10px; line-height:1.55;">
+                    <i class="ph ph-info"></i> Adjustment di Data Masuk / Data Keluar ikut disesuaikan otomatis mengikuti selisih yang baru.
+                </p>`,
+                showCancelButton: true, confirmButtonText: 'Simpan Perubahan', cancelButtonText: 'Batal',
+                confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
+                background: 'var(--surface)', color: 'var(--text)',
+                didOpen: () => {
+                    const inp = document.getElementById('swal-opn-fisik');
+                    const prev = document.getElementById('swal-opn-preview');
+                    const paint = () => {
+                        const v = parseFloat(inp.value);
+                        if (isNaN(v)) { prev.innerHTML = '<span style="color:var(--text-dim);">Selisih —</span>'; return; }
+                        const sel = parseFloat((v - sistem).toFixed(2));
+                        const warna = sel > 0 ? 'var(--green)' : (sel < 0 ? 'var(--red)' : 'var(--text-muted)');
+                        const jenis = sel > 0 ? 'ADJUSTMENT MASUK' : (sel < 0 ? 'ADJUSTMENT KELUAR' : 'SESUAI');
+                        prev.innerHTML = `<span style="color:${warna};">Selisih ${sel > 0 ? '+' : ''}${sel.toFixed(2)} &middot; ${jenis}</span>`;
+                    };
+                    inp.addEventListener('input', paint);
+                    paint();
+                },
+                preConfirm: () => {
+                    const fisikBaru = document.getElementById('swal-opn-fisik').value;
+                    if (fisikBaru === '' || isNaN(parseFloat(fisikBaru))) {
+                        Swal.showValidationMessage('Stock Fisik wajib diisi berupa angka!');
+                        return false;
+                    }
+                    return {
+                        id: id,
+                        fisik: fisikBaru,
+                        petugas: document.getElementById('swal-opn-petugas').value.trim(),
+                        catatan: document.getElementById('swal-opn-catatan').value.trim()
+                    };
+                }
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                serverCall({
+                    fn: 'updateOpnameEntry',
+                    args: [result.value],
+                    blocking: true,
+                    alertOnError: true,
+                    onSuccess: res => {
+                        Swal.fire({ title: 'Berhasil!', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
+                        afterOpnameMutation();
+                    }
+                });
+            });
+        }
+
+        /** Hapus satu baris laporan opname beserta adjustment pasangannya. */
+        function deleteOpnameEntryUI(id) {
+            const row = _opnameRowById.get(id);
+            if (!row) return showAlert('Perhatian', 'Baris opname tidak ditemukan. Muat ulang laporan lalu coba lagi.', 'warning');
+
+            const sel = parseFloat(row.selisih) || 0;
+            const efek = sel > 0
+                ? `<span style="color:var(--red);">Adjustment Masuk <b>+${sel.toFixed(2)}</b> ikut dihapus</span> — stock sistem kembali seperti sebelum opname.`
+                : (sel < 0
+                    ? `<span style="color:var(--red);">Adjustment Keluar <b>-${Math.abs(sel).toFixed(2)}</b> ikut dihapus</span> — stock sistem kembali seperti sebelum opname.`
+                    : `Baris ini <b>SESUAI</b> (selisih 0), jadi tidak ada adjustment yang terpengaruh.`);
+
+            Swal.fire({
+                title: 'Hapus Baris Opname?',
+                html: `<div style="text-align:left; font-size:0.88rem; color:var(--text-muted); line-height:1.7;">
+                    <b style="color:var(--text);">${_expEsc(_rowLabel(row))}</b><br>
+                    ${_expEsc(row.tanggal || '')} &middot; ${_expEsc(formatPeriodeLabel(row.periode))}<br>
+                    Sistem <b>${(parseFloat(row.sistem)||0).toFixed(2)}</b> &middot; Fisik <b>${(parseFloat(row.fisik)||0).toFixed(2)}</b><br><br>
+                    ${efek}
+                </div>`,
+                icon: 'warning', showCancelButton: true,
+                confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal',
+                confirmButtonColor: 'var(--red)', cancelButtonColor: 'var(--border-light)',
+                background: 'var(--surface)', color: 'var(--text)'
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                serverCall({
+                    fn: 'deleteOpnameEntry',
+                    args: [{ id: id }],
+                    blocking: true,
+                    alertOnError: true,
+                    onSuccess: res => {
+                        Swal.fire({ title: 'Terhapus', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
+                        afterOpnameMutation();
+                    }
+                });
+            });
+        }
+
+        /**
+         * Invalidasi sisi klien setelah laporan opname diubah / dihapus.
+         * Cakupannya sama dengan proses opname final: laporan + stock + inbound
+         * + outbound (karena baris adjustment ikut berubah).
+         */
+        function afterOpnameMutation() {
+            globalOpnameReport = [];
+            opnameReportSummary = null;
+            _opnameRowById = new Map();
+            REQ.opnameReport = 'idle';
+            REQ.opnamePeriod = 'idle';
+
+            invalidateOutboundClient();   // adjustment KELUAR + stock
+            invalidateInboundClient();    // adjustment MASUK + exp
+
+            loadOpnamePeriods();
+            loadOpnameReport({ userInitiated: true, force: true });
+            silentlyLoadStockBalances();
         }
 
         // ==========================================================
