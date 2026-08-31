@@ -1979,7 +1979,12 @@
         //
         // Tidak ada satupun loader full-screen pada jalur ini.
 
+        // Penanda versi UI — dipakai untuk memastikan Index.html yang ter-deploy
+        // memang versi terbaru (cek di Console browser, atau ketik APP_UI_BUILD).
+        const APP_UI_BUILD = '2026-08-31 · laporan-opname: edit+hapus, periode bulan-tahun, penanda sudah-opname';
+
         document.addEventListener("DOMContentLoaded", () => {
+            console.log('%cInventory UI build: ' + APP_UI_BUILD, 'color:#0f766e; font-weight:700;');
             renderUiShell();      // 1. shell + tanggal, langsung bisa dilihat user
             startCriticalPath();  // 2. data minimum agar form Keluar bisa dipakai
         });
