@@ -7,12 +7,25 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!--
+      BOOTSTRAP ASET (dioptimalkan)
+      - Tailwind CDN DIHAPUS. Build CDN-nya adalah compiler JIT ~400 KB yang
+        render-blocking DAN memasang MutationObserver yang memindai ulang DOM
+        setiap kali ada perubahan. Aplikasi ini me-render ratusan <tr> per tabel,
+        jadi observer tersebut ikut berjalan di setiap render. Padahal seluruh
+        utility Tailwind yang benar-benar dipakai hanyalah `.hidden` — kini
+        didefinisikan langsung di <style> di bawah (1 baris CSS).
+      - Semua script pihak ketiga memakai `defer`: parsing HTML tidak lagi
+        terhenti, dan urutan eksekusinya tetap terjaga. Aplikasi baru
+        dijalankan pada DOMContentLoaded, yang selalu menunggu script defer.
+    -->
     <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script defer src="https://unpkg.com/@phosphor-icons/web"></script>
     <script>
   // 1. MASUKKAN URL WEB APP BAPAK DI SINI
   const GAS_URL = "https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec";
@@ -103,6 +116,25 @@
         }
 
         * { box-sizing: border-box; }
+
+        /* ===== PENGGANTI TAILWIND =====
+           Satu-satunya utility Tailwind yang dipakai aplikasi ini (dipakai oleh
+           toggleGroup() dan renderGroupedTable() untuk melipat grup tanggal).
+           Mengganti CDN 400 KB dengan satu baris ini. */
+        .hidden { display: none !important; }
+
+        /* ===== CATATAN AUDIT · containment CSS =====
+           `content-visibility:auto` pada <tr> dan `contain:` pada .card sudah
+           dievaluasi dan SENGAJA TIDAK dipakai:
+           - Tabel memakai table-layout:auto tanpa lebar kolom eksplisit, jadi
+             browser harus mengukur semua sel. Melewatkan baris di luar viewport
+             membuat lebar kolom bergeser saat digulir.
+           - .tab-content yang non-aktif sudah `display:none`, yang memang sudah
+             melewati layout & paint — tidak ada yang tersisa untuk dihemat.
+           - `contain:layout` pada .card menjadikan card sebagai containing block
+             bagi anak absolute, sehingga dropdown TomSelect bisa salah posisi.
+           Percepatan render ditempuh lewat jalur yang aman: satu kali parse
+           HTML per tabel (lihat buildRowsHtml di bawah). */
 
         body {
             font-family: 'Sora', sans-serif;
@@ -1610,6 +1642,221 @@
 
         const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
+        // ===================== KEAMANAN & KEBENARAN RENDER =====================
+        // AUDIT: tabel inti (Data Masuk / Keluar / Kartu Stock / Opname) dulu
+        // menyuntikkan nilai mentah ke innerHTML. Nama item yang mengandung
+        // karakter kutip, `<`, atau `&` — yang wajar terjadi pada data dari
+        // spreadsheet, mis. `Gula 1/2" Sachet` atau `Roti A & B` — merusak
+        // markup dan mematikan tombol aksi pada baris tersebut. Nilai yang
+        // dipakai sebagai argumen onclick lebih rawan lagi.
+        //
+        // esc()     -> untuk teks di antara tag.
+        // escAttr() -> untuk nilai di dalam atribut (termasuk argumen onclick).
+        const _ESC_MAP = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
+        const _ESC_RE  = /[&<>"']/g;
+        function esc(v) {
+            return (v === null || v === undefined) ? '' : String(v).replace(_ESC_RE, c => _ESC_MAP[c]);
+        }
+        /**
+         * Aman dipakai untuk: onclick="fn('<?= escAttr(x) ?>')".
+         * Backslash di-escape lebih dulu agar tidak "memakan" kutip berikutnya,
+         * lalu kutip tunggal dinetralkan sebagai entity sehingga tidak pernah
+         * menutup atribut maupun literal string di dalamnya.
+         */
+        function escAttr(v) {
+            if (v === null || v === undefined) return '';
+            return String(v)
+                // --- Lapis 1: literal string JavaScript ---
+                .replace(/\\/g, '\\\\')
+                // Kutip tunggal WAJIB lewat \u0027, bukan &#39;. Browser
+                // meng-decode entity atribut LEBIH DULU, baru isinya dikompilasi
+                // sebagai JS; &#39; akan kembali menjadi ' dan justru menutup
+                // literal string. \u0027 lolos dari decoding HTML dan baru
+                // diterjemahkan oleh compiler JS.
+                .replace(/'/g, '\\u0027')
+                // --- Lapis 2: nilai atribut HTML ---
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        /**
+         * Satu kali parse HTML untuk seluruh tabel.
+         * AUDIT: sebelumnya setiap baris dibuat lewat createElement + assign
+         * .innerHTML per baris, jadi parser HTML dipanggil N kali untuk N baris.
+         * Menyusun string sekali lalu satu kali assign ke tbody memangkas itu
+         * menjadi 1 kali parse — selisihnya paling terasa pada tabel ratusan
+         * baris (Kartu Stock, Laporan Opname, Data Keluar setahun).
+         */
+        function paintRows(tbody, htmlParts) {
+            tbody.innerHTML = htmlParts.join('');
+        }
+
+        // ===================== CACHE PERSISTEN (localStorage) =====================
+        //
+        //  Strategi: STALE-WHILE-REVALIDATE.
+        //
+        //  Sebelumnya, setiap kali halaman dibuka user menatap dropdown
+        //  "Memuat item…" dan tabel kosong sampai Apps Script menjawab
+        //  (di jaringan lambat bisa 3-8 detik). Padahal jawaban yang sama
+        //  sudah pernah diterima pada sesi sebelumnya.
+        //
+        //  Sekarang: data terakhir dipakai untuk MENGGAMBAR SEKETIKA, lalu
+        //  permintaan ke server tetap berjalan di latar dan hasilnya menimpa
+        //  tampilan. Jadi halaman langsung terpakai tanpa pernah menampilkan
+        //  angka yang tidak tervalidasi diam-diam:
+        //    - pil sinkronisasi menyala "Menyinkronkan…" selama revalidasi,
+        //    - angka yang masih berasal dari cache ditandai (lihat markStale).
+        //
+        //  ATURAN KEAMANAN DATA:
+        //    - TTL pendek; lewat TTL, cache diabaikan (tidak dihapus, supaya
+        //      masih bisa dipakai sebagai fallback saat server tidak dapat
+        //      dihubungi).
+        //    - Setiap mutasi (simpan keluar / edit / opname) MENGHAPUS cache
+        //      yang terpengaruh, jadi mustahil menampilkan saldo pasca-transaksi
+        //      yang basi.
+        //    - Versi skema ikut disimpan; ganti APP_CACHE_VER untuk membuang
+        //      seluruh cache lama setelah deploy yang mengubah bentuk data.
+        const APP_CACHE_VER = 'v1';
+        const CACHE_NS      = 'tcg-inv:' + APP_CACHE_VER + ':';
+        // Hanya JALUR KRITIS yang di-cache: master (mengisi dropdown) dan saldo
+        // bulan berjalan (mengisi kolom Sisa Stock). Riwayat transaksi penuh
+        // sengaja TIDAK di-cache — datanya besar, cepat basi, dan tab-nya sudah
+        // dirender dari memori lewat background hydration.
+        const CACHE_TTL     = {
+            master:       12 * 60 * 60 * 1000,  // master item jarang berubah
+            stockCurrent:      10 * 60 * 1000   // saldo: TTL pendek
+        };
+
+        const store = {
+            available: (() => {
+                // Mode privat / storage diblokir: seluruh lapisan ini harus
+                // menonaktifkan diri tanpa mengganggu jalannya aplikasi.
+                try {
+                    const k = CACHE_NS + '__probe';
+                    localStorage.setItem(k, '1');
+                    localStorage.removeItem(k);
+                    return true;
+                } catch (e) { return false; }
+            })(),
+
+            get(key) {
+                if (!this.available) return null;
+                let raw;
+                try { raw = localStorage.getItem(CACHE_NS + key); } catch (e) { return null; }
+                if (!raw) return null;
+                let parsed;
+                try { parsed = JSON.parse(raw); } catch (e) { this.remove(key); return null; }
+                if (!parsed || typeof parsed !== 'object' || !('t' in parsed)) { this.remove(key); return null; }
+                const ttl = CACHE_TTL[key];
+                const age = Date.now() - parsed.t;
+                return { data: parsed.d, age, fresh: !(ttl && age > ttl) };
+            },
+
+            set(key, data) {
+                if (!this.available) return false;
+                try {
+                    localStorage.setItem(CACHE_NS + key, JSON.stringify({ t: Date.now(), d: data }));
+                    return true;
+                } catch (e) {
+                    // Kuota penuh: buang cache milik aplikasi ini lalu coba
+                    // sekali lagi. Kalau tetap gagal, aplikasi jalan tanpa cache.
+                    this.clearAll();
+                    try {
+                        localStorage.setItem(CACHE_NS + key, JSON.stringify({ t: Date.now(), d: data }));
+                        return true;
+                    } catch (e2) { return false; }
+                }
+            },
+
+            remove(key) {
+                if (!this.available) return;
+                try { localStorage.removeItem(CACHE_NS + key); } catch (e) {}
+            },
+
+            /** Hanya membuang key milik aplikasi ini — key aplikasi lain aman. */
+            clearAll() {
+                if (!this.available) return;
+                try {
+                    const doomed = [];
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const k = localStorage.key(i);
+                        if (k && k.indexOf('tcg-inv:') === 0) doomed.push(k);
+                    }
+                    doomed.forEach(k => localStorage.removeItem(k));
+                } catch (e) {}
+            }
+        };
+
+        // Menandai bahwa yang sedang tampil masih berasal dari cache.
+        const _fromCache = { master: false, stockCurrent: false };
+
+        /** Meredupkan kolom Sisa Stock selama angkanya belum tervalidasi server. */
+        function markSisaProvisional(on) {
+            const el = document.getElementById('out-sisa-stock');
+            if (!el) return;
+            el.style.opacity = on ? '0.55' : '';
+            el.title = on ? 'Angka dari cache — sedang disegarkan dari server' : '';
+        }
+
+        /**
+         * Dipanggil setiap kali ada transaksi/koreksi. Cache yang saldonya ikut
+         * berubah dibuang agar reload berikutnya tidak memakai angka pra-mutasi.
+         */
+        function invalidateStockCaches() {
+            store.remove('stockCurrent');
+        }
+
+        /**
+         * Isi layar dari cache SEBELUM request pertama dikirim.
+         * Tidak menyentuh REQ.* sama sekali, jadi revalidasi tetap berjalan
+         * persis seperti biasa.
+         */
+        function hydrateFromCache() {
+            if (!store.available) return;
+
+            const m = store.get('master');
+            if (m && m.fresh && Array.isArray(m.data) && m.data.length) {
+                masterItems = m.data;
+                _buildMasterIndex();
+                initDropdown(masterItems);          // dropdown langsung bisa dipakai
+                _masterSig = _masterSignature(masterItems);
+                _fromCache.master = true;
+            }
+
+            const st = store.get('stockCurrent');
+            if (st && st.fresh && Array.isArray(st.data) && st.data.length) {
+                const rows = normalizeStockRows(st.data);
+                _buildSisaIndex(rows);
+                globalStockData = rows;
+                _buildStockIndex();
+                setStockScopeNote(true);
+                _fromCache.stockCurrent = true;
+                markSisaProvisional(true);
+            }
+        }
+
+        /**
+         * Apakah daftar master dari server identik dengan yang sudah tergambar
+         * dari cache? Hanya field yang benar-benar memengaruhi isi dropdown yang
+         * dibandingkan (nama + satuan + status aktif), bukan seluruh objek.
+         */
+        let _masterSig = '';
+        function _masterSignature(items) {
+            const parts = [];
+            for (const it of (items || [])) {
+                parts.push(it.namaItem, '|', it.uom || '', '|', it.altUom || '', '|', isItemActive(it) ? '1' : '0', ';');
+            }
+            return parts.join('');
+        }
+        function _sameMasterList(items) {
+            const sig = _masterSignature(items);
+            const same = (sig === _masterSig);
+            _masterSig = sig;
+            return same;
+        }
+
         // ===================== BOOSTER: CACHE & INDEX =====================
         const _stripCache = new Map();       // cache hasil stripCode()
         let _stockIndex   = new Map();       // namaItem -> row stock (O(1) lookup)
@@ -1927,43 +2174,41 @@
             return 'color:var(--green);font-weight:700;background:var(--green-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(21,128,61,0.2);display:inline-block;font-size:0.75rem;';
         }
 
+        // AUDIT: konstanta di bawah dulu dibuat ULANG di dalam isItemActive()
+        // pada SETIAP pemanggilan — termasuk `new Set([...])`. Fungsi ini
+        // dipanggil sekali per item master (dan sekali lagi saat menghitung
+        // signature), jadi untuk 800 item itu ribuan alokasi yang tidak perlu.
+        // Dipindah ke scope modul: dibuat satu kali seumur halaman.
+        const _ACTIVE_KEYS = [
+            'status','Status','STATUS',
+            'aktif','Aktif','AKTIF',
+            'aktiv','Aktiv','AKTIV',
+            'active','Active','ACTIVE',
+            'statusitem','StatusItem','STATUSITEM',
+            'status_item','Status_Item','STATUS_ITEM',
+            'isactive','IsActive','ISACTIVE'
+        ];
+        const _ACTIVE_NORM_KEYS = new Set(['status','aktif','aktiv','active','statusitem','statusaktif']);
+        const _ACTIVE_VALUES    = new Set(['AKTIV','AKTIF','ACTIVE']);
+
         function isItemActive(item) {
             if (!item || typeof item !== 'object') return false;
 
-            const POSSIBLE_KEYS = [
-                'status','Status','STATUS',
-                'aktif','Aktif','AKTIF',
-                'aktiv','Aktiv','AKTIV',
-                'active','Active','ACTIVE',
-                'statusitem','StatusItem','STATUSITEM',
-                'status_item','Status_Item','STATUS_ITEM',
-                'isactive','IsActive','ISACTIVE'
-            ];
+            let rawVal;
 
-            let rawVal = undefined;
-
-            for (const k of POSSIBLE_KEYS) {
-                if (Object.prototype.hasOwnProperty.call(item, k)) {
-                    rawVal = item[k];
-                    break;
-                }
+            for (const k of _ACTIVE_KEYS) {
+                if (Object.prototype.hasOwnProperty.call(item, k)) { rawVal = item[k]; break; }
             }
 
             if (rawVal === undefined) {
                 for (const k in item) {
                     if (!Object.prototype.hasOwnProperty.call(item, k)) continue;
-                    const norm = k.toLowerCase().replace(/[_\-\s]/g, '');
-                    if (['status','aktif','aktiv','active','statusitem','statusaktif'].includes(norm)) {
-                        rawVal = item[k];
-                        break;
-                    }
+                    if (_ACTIVE_NORM_KEYS.has(k.toLowerCase().replace(/[_\-\s]/g, ''))) { rawVal = item[k]; break; }
                 }
             }
 
             if (rawVal === undefined || rawVal === null) return false;
-
-            const cleaned = rawVal.toString().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-            return new Set(['AKTIV','AKTIF','ACTIVE']).has(cleaned);
+            return _ACTIVE_VALUES.has(rawVal.toString().replace(/[^a-zA-Z0-9]/g, '').toUpperCase());
         }
 
         // ===================== INIT · LIFECYCLE =====================
@@ -1986,7 +2231,8 @@
         document.addEventListener("DOMContentLoaded", () => {
             console.log('%cInventory UI build: ' + APP_UI_BUILD, 'color:#0f766e; font-weight:700;');
             renderUiShell();      // 1. shell + tanggal, langsung bisa dilihat user
-            startCriticalPath();  // 2. data minimum agar form Keluar bisa dipakai
+            hydrateFromCache();   // 2. isi dari cache -> layar langsung terpakai
+            startCriticalPath();  // 3. revalidasi ke server (menimpa cache)
         });
 
         function renderUiShell() {
@@ -2145,9 +2391,24 @@
                 onSuccess: res => {
                     masterItems = res.data || [];
                     _buildMasterIndex();   // BOOSTER
-                    initDropdown(masterItems);
+                    store.set('master', masterItems);          // untuk boot berikutnya
+                    // Membangun ulang TomSelect itu mahal (destroy + re-render
+                    // seluruh opsi) dan MENGHAPUS pilihan user. Bila isinya sama
+                    // persis dengan yang sudah digambar dari cache, lewati saja.
+                    if (!(_fromCache.master && _sameMasterList(masterItems))) {
+                        initDropdown(masterItems);
+                    }
+                    _fromCache.master = false;
                 },
                 onError: msg => {
+                    // Bila dropdown sudah terisi dari cache, JANGAN dikosongkan:
+                    // user tetap bisa bekerja walau server sedang tidak terjangkau.
+                    // Pil sinkronisasi sudah menampilkan status gagal, jadi tidak
+                    // perlu dialog yang memblokir pekerjaan.
+                    if (masterItems.length) {
+                        console.warn('Master gagal disegarkan, memakai data cache:', msg);
+                        return;
+                    }
                     initDropdown([], 'Gagal memuat item — muat ulang halaman');
                     showAlert('Error', 'Gagal memuat data Master: ' + msg, 'error');
                 },
@@ -2244,7 +2505,10 @@
                 args: [!!opt.force],
                 onSuccess: res => {
                     const rows = normalizeStockRows(res.data);
+                    store.set('stockCurrent', res.data);       // simpan bentuk mentah
                     _buildSisaIndex(rows);
+                    _fromCache.stockCurrent = false;
+                    markSisaProvisional(false);                // angka sudah tervalidasi
                     updateSelectedSisaStock();
                     // Selama data penuh belum tiba, tab Kartu Stock tetap berguna.
                     if (REQ.stockFull !== 'ready') {
@@ -2366,22 +2630,23 @@
             }
 
             btnSave.disabled = false;
-            const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
+            const html = [];   // BOOSTER: satu kali parse HTML
             cartItems.forEach((item, idx) => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td style="font-weight:700; color:var(--text);">${stripCode(item.namaItem)}</td>
-                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${item.altUom}</td>
-                    <td style="text-align:right; font-weight:800; color:var(--red); font-size:0.95rem;">${item.qty}</td>
-                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${item.uom}</td>
-                    <td style="text-align:center;">
-                        <button onclick="removeCartItem(${idx})" style="background:var(--red-soft); border:1px solid rgba(220,38,38,0.25); color:var(--red); border-radius:8px; padding:6px 9px; cursor:pointer;" title="Hapus">
-                            <i class="ph ph-trash" style="font-size:1.05rem;"></i>
-                        </button>
-                    </td>`;
-                frag.appendChild(tr);
+                // idx adalah angka yang kita hasilkan sendiri -> aman apa adanya.
+                // Sisanya berasal dari master data, jadi harus di-escape.
+                html.push(
+                    `<tr>`,
+                    `<td style="font-weight:700; color:var(--text);">${esc(stripCode(item.namaItem))}</td>`,
+                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(item.altUom)}</td>`,
+                    `<td style="text-align:right; font-weight:800; color:var(--red); font-size:0.95rem;">${esc(item.qty)}</td>`,
+                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(item.uom)}</td>`,
+                    `<td style="text-align:center;">`,
+                    `<button onclick="removeCartItem(${idx})" style="background:var(--red-soft); border:1px solid rgba(220,38,38,0.25); color:var(--red); border-radius:8px; padding:6px 9px; cursor:pointer;" title="Hapus">`,
+                    `<i class="ph ph-trash" style="font-size:1.05rem;"></i></button></td>`,
+                    `</tr>`
+                );
             });
-            tbody.appendChild(frag);   // BOOSTER: satu kali insert
+            paintRows(tbody, html);
         }
 
         function saveOutbound() {
@@ -2421,6 +2686,7 @@
          */
         function invalidateOutboundClient() {
             invalidateLogCache();          // log kartu stock ikut disegarkan
+            invalidateStockCaches();       // cache localStorage ikut dibuang
             invalidateExpClient();         // sisa batch (FIFO) di Exp Monitor ikut berubah
             globalOutboundData = [];
             globalStockData = [];
@@ -2444,6 +2710,7 @@
         /** Edit Exp Date hanya membatalkan cache Inbound (QTY tidak berubah). */
         function invalidateInboundClient() {
             invalidateLogCache();          // exp date pada log ikut berubah
+            invalidateStockCaches();       // cache localStorage ikut dibuang
             invalidateExpClient();         // exp date adalah sumber Exp Monitor
             globalInboundData = [];
             REQ.inboundCurrent = 'idle';
@@ -2499,69 +2766,88 @@
                 if (b.rawDate !== a.rawDate) return b.rawDate - a.rawDate;
                 return _rowKey(a).localeCompare(_rowKey(b));   // BOOSTER: tanpa stripCode berulang
             });
-            let currentGroup = '', groupId = 0;
-            const frag = document.createDocumentFragment(); // BOOSTER: batch DOM insert
 
-            data.forEach(row => {
+            let currentGroup = '', groupId = 0;
+            // BOOSTER: satu array string -> satu kali parse HTML untuk seluruh
+            // tabel. Sebelumnya tiap baris memanggil parser HTML sendiri lewat
+            // tr.innerHTML, jadi 500 baris = 500 kali parse.
+            const html = [];
+
+            for (let i = 0; i < data.length; i++) {
+                const row = data[i];
+
                 if (row.tanggalGroup !== currentGroup) {
                     currentGroup = row.tanggalGroup; groupId++;
-                    const gtr = document.createElement('tr');
-                    gtr.className = 'group-hdr';
-                    gtr.innerHTML = `<td colspan="${cols}"><div class="group-hdr-inner" onclick="toggleGroup('grp-${type}-${groupId}','icon-${type}-${groupId}')">
-                        <span style="font-size:0.825rem; font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px;">
-                            <i class="ph ph-calendar-blank" style="font-size:1.15rem;"></i> ${currentGroup}
-                        </span>
-                        <i id="icon-${type}-${groupId}" class="ph ph-caret-down" style="color:var(--text-dim); font-size:1.1rem; transition:transform 0.25s;"></i>
-                    </div></td>`;
-                    frag.appendChild(gtr); // BOOSTER
+                    html.push(
+                        `<tr class="group-hdr"><td colspan="${cols}"><div class="group-hdr-inner" onclick="toggleGroup('grp-${type}-${groupId}','icon-${type}-${groupId}')">`,
+                        `<span style="font-size:0.825rem; font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px;">`,
+                        `<i class="ph ph-calendar-blank" style="font-size:1.15rem;"></i> ${esc(currentGroup)}</span>`,
+                        `<i id="icon-${type}-${groupId}" class="ph ph-caret-down" style="color:var(--text-dim); font-size:1.1rem; transition:transform 0.25s;"></i>`,
+                        `</div></td></tr>`
+                    );
                 }
 
-                const tr = document.createElement('tr');
-                tr.className = `grp-${type}-${groupId} hidden`;
                 const adjBadge = isAdjRow(row) ? ` <span class="badge badge-adj" style="padding:1px 7px;">ADJ</span>` : '';
-
-                const qtyTd = isOut
-                    ? `<td style="text-align:right; font-weight:800; color:var(--red); font-size:0.925rem;">${parseFloat(row.qty)>0?'-':''}${parseFloat(row.qty).toFixed(2)}</td>`
-                    : `<td style="text-align:right; font-weight:800; color:var(--green); font-size:0.925rem;">${parseFloat(row.qty)>0?'+':''}${parseFloat(row.qty).toFixed(2)}</td>`;
+                // Qty yang tidak terbaca sebagai angka ditandai '—', BUKAN 0.00.
+                // Pada aplikasi inventory, 0.00 palsu terlihat seperti angka sah
+                // dan bisa ikut dipakai mengambil keputusan stock; '—' langsung
+                // terbaca sebagai "nilai tidak valid".
+                const qtyNum = parseFloat(row.qty);
+                const qtyBad = isNaN(qtyNum);
+                const qtyTxt = qtyBad
+                    ? '—'
+                    : `${qtyNum > 0 ? (isOut ? '-' : '+') : ''}${qtyNum.toFixed(2)}`;
+                const qtyColor = qtyBad ? 'var(--text-dim)' : (isOut ? 'var(--red)' : 'var(--green)');
+                const qtyTd = `<td style="text-align:right; font-weight:800; color:${qtyColor}; font-size:0.925rem;">${qtyTxt}</td>`;
 
                 let actionTd = '';
                 if (isOut) {
-                    const idParam = Array.isArray(row.ids) ? JSON.stringify(row.ids).replace(/"/g, '&quot;') : row.id;
-                    actionTd = `<td style="text-align:center;"><button onclick="editOutboundItem('${idParam}','${row.tanggalEdit}','${row.qty}')"
-                        style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 9px; cursor:pointer;">
-                        <i class="ph ph-pencil-simple" style="font-size:1.05rem;"></i></button></td>`;
+                    // ids bisa berupa array (baris hasil penggabungan). JSON-nya
+                    // dilewatkan sebagai argumen string, jadi harus lolos dua
+                    // lapisan escape yang sama seperti nilai lain.
+                    const idParam = Array.isArray(row.ids) ? escAttr(JSON.stringify(row.ids)) : escAttr(row.id);
+                    actionTd = `<td style="text-align:center;"><button onclick="editOutboundItem('${idParam}','${escAttr(row.tanggalEdit)}','${escAttr(row.qty)}')"` +
+                        ` style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 9px; cursor:pointer;">` +
+                        `<i class="ph ph-pencil-simple" style="font-size:1.05rem;"></i></button></td>`;
                 } else if (isIn) {
-                    actionTd = `<td style="text-align:center;"><button onclick="editInboundExpDate('${row.id}','${row.expDate||''}')"
-                        style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 9px; cursor:pointer;">
-                        <i class="ph ph-calendar-plus" style="font-size:1.05rem;"></i></button></td>`;
+                    actionTd = `<td style="text-align:center;"><button onclick="editInboundExpDate('${escAttr(row.id)}','${escAttr(row.expDate || '')}')"` +
+                        ` style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 9px; cursor:pointer;">` +
+                        `<i class="ph ph-calendar-plus" style="font-size:1.05rem;"></i></button></td>`;
                 }
 
+                const rowCls = `grp-${type}-${groupId} hidden`;
+
                 if (isIn) {
-                    const rawExp    = row.expDate || row.exp_date || row.expired || row.ket || row.keterangan || '';
+                    const rawExp     = row.expDate || row.exp_date || row.expired || row.ket || row.keterangan || '';
                     const expDateVal = formatExpDate(rawExp);
                     const expStyle   = getExpDateStyle(rawExp);
-                    tr.innerHTML = `
-                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.tanggal}</td>
-                        <td class="mono">${row.id||'—'}</td>
-                        <td style="font-weight:700; color:var(--text);">${_rowLabel(row)}${adjBadge}</td>
-                        <td><span style="${expStyle}">${expDateVal}</span></td>
-                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.altUom}</td>
-                        ${qtyTd}
-                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.uom}</td>
-                        ${actionTd}`;
+                    html.push(
+                        `<tr class="${rowCls}">`,
+                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.tanggal)}</td>`,
+                        `<td class="mono">${esc(row.id || '—')}</td>`,
+                        `<td style="font-weight:700; color:var(--text);">${esc(_rowLabel(row))}${adjBadge}</td>`,
+                        `<td><span style="${expStyle}">${esc(expDateVal)}</span></td>`,
+                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.altUom)}</td>`,
+                        qtyTd,
+                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.uom)}</td>`,
+                        actionTd,
+                        `</tr>`
+                    );
                 } else {
-                    tr.innerHTML = `
-                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.tanggal}</td>
-                        <td style="font-weight:700; color:var(--text);">${_rowLabel(row)}${adjBadge}</td>
-                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.altUom}</td>
-                        ${qtyTd}
-                        <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.uom}</td>
-                        ${actionTd}`;
+                    html.push(
+                        `<tr class="${rowCls}">`,
+                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.tanggal)}</td>`,
+                        `<td style="font-weight:700; color:var(--text);">${esc(_rowLabel(row))}${adjBadge}</td>`,
+                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.altUom)}</td>`,
+                        qtyTd,
+                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.uom)}</td>`,
+                        actionTd,
+                        `</tr>`
+                    );
                 }
-                frag.appendChild(tr); // BOOSTER
-            });
-            tbody.innerHTML = '';       // BOOSTER: satu kali clear
-            tbody.appendChild(frag);    // BOOSTER: satu kali insert
+            }
+
+            paintRows(tbody, html);
         }
 
         // ===================== DATA MASUK =====================
@@ -2760,32 +3046,34 @@
                 return;
             }
 
-            const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
-            filtered.forEach(row => {
-                const tr = document.createElement('tr');
-                const stockAwal  = row._awal;
-                const masukBiasa = row._masuk;
-                const keluar     = row._keluar;
-                const sisa       = row._sisa;
-                tr.innerHTML = `
-                    <td style="font-weight:700; color:var(--text);">${_rowLabel(row)}</td>
-                    <td style="text-align:center; color:var(--amber); font-weight:700;">${stockAwal.toFixed(2)}</td>
-                    <td style="text-align:center; color:var(--green); font-weight:700;">${masukBiasa.toFixed(2)}</td>
-                    <td style="text-align:center; color:var(--red); font-weight:700;">${keluar.toFixed(2)}</td>
-                    <td style="text-align:center;" class="${sisa<0?'sisa-neg':'sisa-pos'}">${sisa.toFixed(2)}</td>
-                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.uom}</td>
-                    <td style="text-align:center;">
-                        <button onclick="showStockDetail('${row.namaItem.replace(/'/g,"\\'")}')"
-                            style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:0.78rem; font-family:'Sora',sans-serif; display:inline-flex; align-items:center; gap:6px; font-weight:700;"
-                            onmouseover="this.style.background='rgba(15, 118, 110, 0.15)'; prefetchItemLog('${row.namaItem.replace(/'/g,"\\'")}')"
-                            onmouseout="this.style.background='var(--accent-soft)'; cancelPrefetchItemLog()">
-                            <i class="ph ph-eye" style="font-size:0.95rem;"></i> Log
-                        </button>
-                    </td>`;
-                frag.appendChild(tr);
-            });
-            tbody.innerHTML = '';      // BOOSTER: satu kali clear
-            tbody.appendChild(frag);   // BOOSTER: satu kali insert
+            const html = [];   // BOOSTER: satu kali parse HTML
+            const BTN_STYLE = "background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:0.78rem; font-family:'Sora',sans-serif; display:inline-flex; align-items:center; gap:6px; font-weight:700;";
+
+            for (let i = 0; i < filtered.length; i++) {
+                const row = filtered[i];
+                const sisa = row._sisa;
+                // escAttr: nama item bisa memuat kutip / & / < dari spreadsheet.
+                // Versi lama hanya .replace(/'/g,"\\'") sehingga item seperti
+                // `Gula 1/2" Sachet` merusak atribut dan tombol Log jadi mati.
+                const nameArg = escAttr(row.namaItem);
+                html.push(
+                    `<tr>`,
+                    `<td style="font-weight:700; color:var(--text);">${esc(_rowLabel(row))}</td>`,
+                    `<td style="text-align:center; color:var(--amber); font-weight:700;">${row._awal.toFixed(2)}</td>`,
+                    `<td style="text-align:center; color:var(--green); font-weight:700;">${row._masuk.toFixed(2)}</td>`,
+                    `<td style="text-align:center; color:var(--red); font-weight:700;">${row._keluar.toFixed(2)}</td>`,
+                    `<td style="text-align:center;" class="${sisa < 0 ? 'sisa-neg' : 'sisa-pos'}">${sisa.toFixed(2)}</td>`,
+                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.uom)}</td>`,
+                    `<td style="text-align:center;">`,
+                    `<button onclick="showStockDetail('${nameArg}')" style="${BTN_STYLE}"`,
+                    ` onmouseover="this.style.background='rgba(15, 118, 110, 0.15)'; prefetchItemLog('${nameArg}')"`,
+                    ` onmouseout="this.style.background='var(--accent-soft)'; cancelPrefetchItemLog()">`,
+                    `<i class="ph ph-eye" style="font-size:0.95rem;"></i> Log</button></td>`,
+                    `</tr>`
+                );
+            }
+
+            paintRows(tbody, html);
         }
 
         // ===================== MODAL DETAIL LOG =====================
@@ -3164,42 +3452,46 @@
             }
 
             let shown = 0;
-            const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
-            opnameSnapshot.forEach((it, idx) => {
-                if (keyword && !(it._search !== undefined ? it._search : stripCode(it.namaItem).toLowerCase()).includes(keyword)) return;
+            const html = [];   // BOOSTER: satu kali parse HTML
+
+            for (let idx = 0; idx < opnameSnapshot.length; idx++) {
+                const it = opnameSnapshot[idx];
+                const search = (it._search !== undefined) ? it._search : stripCode(it.namaItem).toLowerCase();
+                if (keyword && !search.includes(keyword)) continue;
                 shown++;
+
                 const sistem = parseFloat(it.sistem) || 0;
                 const p = opnamePresentasi(it);
 
                 // Penanda item yang TANGGAL & NAMA-nya sudah ada di Laporan Opname:
                 // nilai fisik tersimpannya ditampilkan langsung di bawah nama item.
                 const hint = it.sudahOpname
-                    ? `<span class="opn-saved-hint"><i class="ph ph-seal-check"></i> Opname tersimpan:
-                        ${(parseFloat(it.fisikTersimpan) || 0).toFixed(2)}${it.uom ? ' ' + _expEsc(it.uom) : ''}
-                        ${it.selisihTersimpan !== '' ? `· selisih ${(parseFloat(it.selisihTersimpan) || 0) > 0 ? '+' : ''}${(parseFloat(it.selisihTersimpan) || 0).toFixed(2)}` : ''}</span>`
+                    ? `<span class="opn-saved-hint"><i class="ph ph-seal-check"></i> Opname tersimpan: ` +
+                      `${(parseFloat(it.fisikTersimpan) || 0).toFixed(2)}${it.uom ? ' ' + esc(it.uom) : ''}` +
+                      `${it.selisihTersimpan !== '' ? ` · selisih ${(parseFloat(it.selisihTersimpan) || 0) > 0 ? '+' : ''}${(parseFloat(it.selisihTersimpan) || 0).toFixed(2)}` : ''}</span>`
                     : '';
 
-                const tr = document.createElement('tr');
-                if (p.tersimpan) tr.className = 'opn-done';
-                tr.innerHTML = `
-                    <td style="text-align:center; color:var(--text-dim); font-size:0.78rem; font-weight:600;">${idx+1}</td>
-                    <td style="font-weight:700; color:var(--text);">${it._label !== undefined ? it._label : stripCode(it.namaItem)}${hint}</td>
-                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${it.uom || '—'}</td>
-                    <td style="text-align:right; font-weight:700; color:var(--blue); font-family:'JetBrains Mono',monospace;">${sistem.toFixed(2)}</td>
-                    <td style="text-align:right;">
-                        <input type="number" step="0.01" id="opn-inp-${idx}" class="${p.inputClass}" placeholder="0.00"
-                            value="${p.hasVal ? it.fisik : ''}" oninput="setOpnameFisik(${idx}, this.value)">
-                    </td>
-                    <td id="opn-sel-${idx}" style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${p.selColor};">${p.selTxt}</td>
-                    <td id="opn-st-${idx}" style="text-align:center;">${p.stHtml}</td>`;
-                frag.appendChild(tr);
-            });
+                const label = (it._label !== undefined) ? it._label : stripCode(it.namaItem);
+
+                html.push(
+                    `<tr${p.tersimpan ? ' class="opn-done"' : ''}>`,
+                    `<td style="text-align:center; color:var(--text-dim); font-size:0.78rem; font-weight:600;">${idx + 1}</td>`,
+                    `<td style="font-weight:700; color:var(--text);">${esc(label)}${hint}</td>`,
+                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(it.uom || '—')}</td>`,
+                    `<td style="text-align:right; font-weight:700; color:var(--blue); font-family:'JetBrains Mono',monospace;">${sistem.toFixed(2)}</td>`,
+                    `<td style="text-align:right;">`,
+                    `<input type="number" step="0.01" id="opn-inp-${idx}" class="${p.inputClass}" placeholder="0.00"`,
+                    ` value="${p.hasVal ? escAttr(it.fisik) : ''}" oninput="setOpnameFisik(${idx}, this.value)"></td>`,
+                    `<td id="opn-sel-${idx}" style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${p.selColor};">${p.selTxt}</td>`,
+                    `<td id="opn-st-${idx}" style="text-align:center;">${p.stHtml}</td>`,
+                    `</tr>`
+                );
+            }
 
             if (shown === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Item tidak ditemukan.</td></tr>';
             } else {
-                tbody.innerHTML = '';      // BOOSTER: satu kali clear
-                tbody.appendChild(frag);   // BOOSTER: satu kali insert
+                paintRows(tbody, html);
             }
 
             document.getElementById('btn-process-opname').disabled = opnameSnapshot.length === 0;
@@ -3739,7 +4031,7 @@
 
             filtered.sort((a,b) => (b.rawDate - a.rawDate) || _rowLabel(a).localeCompare(_rowLabel(b)));
             let currentGroup = '', groupId = 0;
-            const frag = document.createDocumentFragment();   // BOOSTER: batch DOM insert
+            const html = [];   // BOOSTER: satu kali parse HTML
 
             // Index ID Opname -> baris, dipakai modal Edit agar tidak perlu
             // mengirim seluruh nilai baris lewat atribut onclick.
@@ -3748,15 +4040,12 @@
             filtered.forEach(row => {
                 if (row.tanggalGroup !== currentGroup) {
                     currentGroup = row.tanggalGroup; groupId++;
-                    const gtr = document.createElement('tr');
-                    gtr.className = 'group-hdr grp-laporan-print';
-                    gtr.innerHTML = `<td colspan="10"><div class="group-hdr-inner" style="cursor:default;">
+                    html.push(`<tr class="group-hdr grp-laporan-print"><td colspan="10"><div class="group-hdr-inner" style="cursor:default;">
                         <span style="font-size:0.825rem; font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px;">
-                            <i class="ph ph-calendar-check" style="font-size:1.15rem;"></i> ${currentGroup}
+                            <i class="ph ph-calendar-check" style="font-size:1.15rem;"></i> ${esc(currentGroup)}
                         </span>
-                        <span style="font-size:0.72rem; color:var(--text-dim); font-weight:700; letter-spacing:0.04em;">${formatPeriodeLabel(row.periode)}</span>
-                    </div></td>`;
-                    frag.appendChild(gtr);
+                        <span style="font-size:0.72rem; color:var(--text-dim); font-weight:700; letter-spacing:0.04em;">${esc(formatPeriodeLabel(row.periode))}</span>
+                    </div></td></tr>`);
                 }
 
                 const sel = parseFloat(row.selisih) || 0;
@@ -3776,22 +4065,25 @@
                         </span></td>`
                     : `<td class="no-print" style="text-align:center; color:var(--text-dim); font-size:0.78rem;">—</td>`;
 
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${row.tanggal}</td>
-                    <td style="font-weight:700; color:var(--text);">${_rowLabel(row)}</td>
-                    <td style="color:var(--text-muted); font-size:0.8rem;">${row.uom || '—'}</td>
-                    <td style="text-align:right; color:var(--blue); font-weight:700; font-family:'JetBrains Mono',monospace;">${(parseFloat(row.sistem)||0).toFixed(2)}</td>
-                    <td style="text-align:right; color:var(--accent); font-weight:700; font-family:'JetBrains Mono',monospace;">${(parseFloat(row.fisik)||0).toFixed(2)}</td>
-                    <td style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${sel>0?'var(--green)':(sel<0?'var(--red)':'var(--text-muted)')};">${sel>0?'+':''}${sel.toFixed(2)}</td>
-                    <td style="text-align:center;">${jenisBadge}</td>
-                    <td style="color:var(--text-muted); font-size:0.8rem;">${row.petugas || '—'}</td>
-                    <td style="color:var(--text-dim); font-size:0.78rem;">${row.catatan || '—'}</td>
-                    ${aksiTd}`;
-                frag.appendChild(tr);
+                // `petugas` dan `catatan` adalah teks bebas yang diketik operator —
+                // field paling rawan di aplikasi ini dan sebelumnya disisipkan
+                // mentah ke innerHTML. Sekarang keduanya di-escape.
+                html.push(
+                    `<tr>`,
+                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.tanggal)}</td>`,
+                    `<td style="font-weight:700; color:var(--text);">${esc(_rowLabel(row))}</td>`,
+                    `<td style="color:var(--text-muted); font-size:0.8rem;">${esc(row.uom || '—')}</td>`,
+                    `<td style="text-align:right; color:var(--blue); font-weight:700; font-family:'JetBrains Mono',monospace;">${(parseFloat(row.sistem)||0).toFixed(2)}</td>`,
+                    `<td style="text-align:right; color:var(--accent); font-weight:700; font-family:'JetBrains Mono',monospace;">${(parseFloat(row.fisik)||0).toFixed(2)}</td>`,
+                    `<td style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${sel>0?'var(--green)':(sel<0?'var(--red)':'var(--text-muted)')};">${sel>0?'+':''}${sel.toFixed(2)}</td>`,
+                    `<td style="text-align:center;">${jenisBadge}</td>`,
+                    `<td style="color:var(--text-muted); font-size:0.8rem;">${esc(row.petugas || '—')}</td>`,
+                    `<td style="color:var(--text-dim); font-size:0.78rem;">${esc(row.catatan || '—')}</td>`,
+                    aksiTd,
+                    `</tr>`
+                );
             });
-            tbody.innerHTML = '';      // BOOSTER: satu kali clear
-            tbody.appendChild(frag);   // BOOSTER: satu kali insert
+            paintRows(tbody, html);
         }
 
         // ---------- EDIT & HAPUS BARIS LAPORAN OPNAME ----------
@@ -3805,9 +4097,10 @@
         // perhitungan pada tanggal cut-off, bukan input operator.
 
         /** Nilai aman untuk disisipkan sebagai argumen string di atribut onclick. */
-        function _jsArg(v) {
-            return _expEsc(v).replace(/'/g, "\\'");
-        }
+        // Dulu: _expEsc(v).replace(/'/g, "\\'"). Pola itu meng-escape kutip
+        // SETELAH escaping HTML dan tidak menangani `"` maupun `<`. escAttr()
+        // menangani kedua lapisan sekaligus.
+        function _jsArg(v) { return escAttr(v); }
 
         /** Ubah Stock Fisik / Petugas / Catatan pada satu baris laporan opname. */
         function editOpnameEntry(id) {
@@ -4002,11 +4295,8 @@
         function _noZeroCode(v) {
             return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || v) : v;
         }
-        function _escHtml(v) {
-            return (v === null || v === undefined) ? '' : v.toString()
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-        }
+        // Alias historis — sekarang memakai esc() yang sama.
+        function _escHtml(v) { return esc(v); }
 
         // ---------------- Index kode -> item ----------------
 
@@ -4574,10 +4864,9 @@
 
         const _debouncedFilterExp = _debounce(_onExpSearch, 280);
 
-        function _expEsc(v) {
-            return (v === null || v === undefined) ? '' : v.toString()
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
+        // Alias historis. Versi lama TIDAK meng-escape kutip tunggal, sehingga
+        // nama item ber-apostrof bisa lolos ke atribut. esc() menutup celah itu.
+        function _expEsc(v) { return esc(v); }
 
         function _expFmtQty(v) {
             const n = parseFloat(v);
