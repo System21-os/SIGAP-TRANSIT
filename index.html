@@ -2,72 +2,543 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0f766e">
     <title>Trans Cafe Gading · Inventory</title>
+    <!-- URL Web App Apps Script untuk mode HTTP (GitHub Pages / host lain).
+         Saat dibuka dari Apps Script, nilai ini TIDAK dipakai: request lewat
+         google.script.run (native). Lihat APP CONFIG di bawah. -->
+    <meta name="gas-url" content="https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec">
 
+    <!--
+      [UPGRADE · PERF] URUTAN MUAT ASET — identik untuk Apps Script & GitHub Pages.
+      - Google Fonts: TIDAK lagi memblokir render (media=print -> all). Sora
+        dimuat sebagai rentang variable 400..800 (bobot 300 tidak dipakai di
+        mana pun), JetBrains Mono 400..600.
+      - Phosphor Icons: loader JS lama (unpkg, versi tidak dipatok) menyuntik
+        CSS untuk SEMUA 6 bobot ikon (~654 KB CSS mentah). Aplikasi ini hanya
+        memakai `ph` (regular) dan `ph-fill` (2 ikon) -> kini hanya dua CSS itu
+        (~164 KB mentah / ~24 KB gzip), versi dipatok, satu origin (jsdelivr),
+        tidak memblokir render.
+      - SweetAlert2 dipatok versinya (cache CDN immutable) & tetap `defer`.
+      - Tom Select tetap `defer` (dropdown dibuat di DOMContentLoaded).
+      - unpkg.com tidak lagi dibutuhkan saat start-up (ZXing fallback saja).
+    -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-
-    <!--
-      BOOTSTRAP ASET (dioptimalkan)
-      - Tailwind CDN DIHAPUS. Build CDN-nya adalah compiler JIT ~400 KB yang
-        render-blocking DAN memasang MutationObserver yang memindai ulang DOM
-        setiap kali ada perubahan. Aplikasi ini me-render ratusan <tr> per tabel,
-        jadi observer tersebut ikut berjalan di setiap render. Padahal seluruh
-        utility Tailwind yang benar-benar dipakai hanyalah `.hidden` — kini
-        didefinisikan langsung di <style> di bawah (1 baris CSS).
-      - Semua script pihak ketiga memakai `defer`: parsing HTML tidak lagi
-        terhenti, dan urutan eksekusinya tetap terjaga. Aplikasi baru
-        dijalankan pada DOMContentLoaded, yang selalu menunggu script defer.
-    -->
-    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400..800&family=JetBrains+Mono:wght@400..600&display=swap" media="print" onload="this.media='all';this.onload=null;">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css" media="print" onload="this.media='all';this.onload=null;">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/fill/style.css" media="print" onload="this.media='all';this.onload=null;">
+    <noscript>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400..800&family=JetBrains+Mono:wght@400..600&display=swap">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/fill/style.css">
+    </noscript>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css">
     <script defer src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script defer src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11.26.25/dist/sweetalert2.all.min.js"></script>
     <script>
-  // 1. MASUKKAN URL WEB APP BAPAK DI SINI
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec";
+    /* =========================================================================
+       [UPGRADE] APP CONFIG · ENVIRONMENT ADAPTER · API CLIENT
+       =========================================================================
+       SATU frontend untuk DUA environment. UI & business logic TIDAK tahu
+       dijalankan dari mana; yang berbeda HANYA transport:
 
-  // 2. FUNGSI PROXY: Mengubah otomatis google.script.run menjadi fetch()
-  window.google = {
-    script: {
-      get run() {
-        let successCb = null;
-        let failureCb = null;
+                      UI / serverCall()
+                            │
+                  AppApi.request(action, args, opt)   ← policy, antrian, dedupe,
+                            │                            timeout, retry, telemetry
+                ┌───────────┴───────────┐
+          Native adapter           HTTP adapter
+        google.script.run.api()    fetch(POST GAS_URL)
+         (Apps Script HTML)        (GitHub Pages / host lain)
+                └───────────┬───────────┘
+                    kode.gs · dispatch_()  ← kontrak & error model sama
 
-        return new Proxy({}, {
-          get: function(target, prop) {
-            // Tangkap handler sukses
-            if (prop === 'withSuccessHandler') {
-              return function(cb) { successCb = cb; return this; };
-            }
-            // Tangkap handler error
-            if (prop === 'withFailureHandler') {
-              return function(cb) { failureCb = cb; return this; };
-            }
-            // Kirim request ke backend Code.gs
-            return function(payload) {
-              fetch(GAS_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Wajib text/plain untuk bypass CORS Apps Script
-                body: JSON.stringify({ action: prop, data: payload || {} })
-              })
-              .then(res => res.json())
-              .then(data => {
-                if (successCb) successCb(data);
-              })
-              .catch(err => {
-                if (failureCb) failureCb(err);
-              });
+       Dulu file ini menimpa window.google dengan proxy fetch() TANPA SYARAT,
+       sehingga saat dibuka dari Apps Script pun setiap request tetap memutar
+       HTML → HTTP → Apps Script (dua hop TLS + redirect) padahal
+       google.script.run tersedia. Sekarang jalur native dipakai bila ada.
+
+       KONFIGURASI URL (pilih salah satu, tanpa mengubah kode):
+         <meta name="gas-url" content="https://script.google.com/macros/s/.../exec">
+         window.APP_CONFIG = { GAS_URL: '...' }   (sebelum script ini)
+       Debug:  ?transport=http  memaksa HTTP adapter (uji parity dari Apps Script)
+               ?perf=1          menyalakan telemetry di Console (AppApi.report())
+       ========================================================================= */
+    (function (global) {
+        'use strict';
+
+        var BOOT_T0 = (global.performance && performance.now) ? performance.now() : Date.now();
+        var DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbxo9ItgOL3ls-qBy6LQixY_jWsxwVRBW3fr781GhGN1e908V-LPH9EXWjbaK5OXfQu-XA/exec";
+
+        function qs(name) {
+            try { return new URLSearchParams(global.location.search).get(name); } catch (e) { return null; }
+        }
+        function lsGet(k) { try { return global.localStorage.getItem(k); } catch (e) { return null; } }
+
+        var cfg = global.APP_CONFIG || {};
+        var metaUrl = document.querySelector('meta[name="gas-url"]');
+        var GAS_URL = cfg.GAS_URL || (metaUrl && metaUrl.content) || DEFAULT_GAS_URL;
+
+        // ---------------------------------------------------------------
+        // ENVIRONMENT DETECTION — berbasis KEMAMPUAN, bukan nama host.
+        // Hostname Apps Script bisa berubah (n-xxxx-script.googleusercontent.com,
+        // domain Workspace, embed Sites), jadi yang diperiksa adalah apakah
+        // google.script.run benar-benar tersedia. Dievaluasi saat request
+        // pertama (bukan saat parse) supaya aman dari urutan injeksi runtime.
+        // ---------------------------------------------------------------
+        function hasNativeRun() {
+            try {
+                return !!(global.google && global.google.script && global.google.script.run &&
+                          typeof global.google.script.run.withSuccessHandler === 'function');
+            } catch (e) { return false; }
+        }
+        var forced = (qs('transport') || cfg.TRANSPORT || '').toLowerCase();   // 'http' | 'native' | ''
+        var _transportName = null;
+        function transportName() {
+            if (_transportName) return _transportName;
+            if (forced === 'http') _transportName = 'http';
+            else _transportName = hasNativeRun() ? 'native' : 'http';
+            return _transportName;
+        }
+
+        var APP_ENV = {
+            get isAppsScript() { return hasNativeRun(); },
+            get isExternal() { return !hasNativeRun(); },
+            get transport() { return transportName(); },
+            host: global.location ? global.location.hostname : '',
+            gasUrl: GAS_URL
+        };
+
+        // HTTP mode: panaskan DNS+TLS ke DUA host yang disentuh satu panggilan
+        // (script.google.com -> 302 -> script.googleusercontent.com). Di mode
+        // native tidak perlu — tidak ada koneksi ekstra yang dibuka percuma.
+        if (!hasNativeRun()) {
+            ['https://script.google.com', 'https://script.googleusercontent.com'].forEach(function (h) {
+                var l = document.createElement('link');
+                l.rel = 'preconnect'; l.href = h; l.crossOrigin = 'anonymous';
+                document.head.appendChild(l);
+            });
+        }
+
+        // ---------------------------------------------------------------
+        // REQUEST POLICY — satu tabel untuk kedua environment.
+        //   READ               : boleh retry (network / timeout), dedupe in-flight
+        //   SAFE_RETRY         : mutasi yang hasilnya sama bila diulang (set nilai /
+        //                        upsert by key) -> retry terbatas saat transport gagal
+        //   MUTATION           : TIDAK di-retry otomatis; hasil tak pasti dilaporkan
+        //                        sebagai UNCERTAIN agar UI memuat ulang data asli
+        //   CRITICAL_TRANSACTION: tx ID + idempotency + verifikasi (AppApi.transact)
+        // Timeout sengaja lebih longgar dari angka "web biasa": eksekusi Apps
+        // Script punya cold start 1-5 dtk, dan mutasi bisa menunggu LockService
+        // hingga 30 dtk di sisi server. Timeout lebih pendek dari itu hanya
+        // menghasilkan retry palsu yang justru menambah beban backend.
+        // ---------------------------------------------------------------
+        var READ = 'READ', SAFE = 'SAFE_RETRY', MUT = 'MUTATION', CRIT = 'CRITICAL_TRANSACTION';
+        var REQUEST_POLICY = {
+            _default:                    { cls: READ, timeout: 20000 },
+            ping:                        { cls: READ, timeout: 10000 },
+            verifyTransaction:           { cls: READ, timeout: 12000, retries: 1 },
+            getMasterData:               { cls: READ, timeout: 20000 },
+            getCurrentMonthStockCard:    { cls: READ, timeout: 25000 },
+            getCurrentMonthOutboundData: { cls: READ, timeout: 25000 },
+            getCurrentMonthInboundData:  { cls: READ, timeout: 25000 },
+            getOpnameDraft:              { cls: READ, timeout: 15000 },
+            getOpnamePeriods:            { cls: READ, timeout: 15000 },
+            getOpnameMarkers:            { cls: READ, timeout: 20000 },
+            getItemDetailLog:            { cls: READ, timeout: 30000 },
+            getOutboundData:             { cls: READ, timeout: 60000, retries: 1 },
+            getInboundData:              { cls: READ, timeout: 60000, retries: 1 },
+            getStockCardData:            { cls: READ, timeout: 60000, retries: 1 },
+            getExpMonitorData:           { cls: READ, timeout: 60000, retries: 1 },
+            getOpnameSnapshot:           { cls: READ, timeout: 60000, retries: 1 },
+            getOpnameHistory:            { cls: READ, timeout: 45000, retries: 1 },
+            updateOutboundData:          { cls: SAFE, timeout: 35000 },
+            updateInboundExpDate:        { cls: SAFE, timeout: 35000 },
+            updateExpStatus:             { cls: SAFE, timeout: 35000 },
+            bulkUpdateExpStatus:         { cls: SAFE, timeout: 45000 },
+            saveOpnameDraft:             { cls: SAFE, timeout: 35000 },
+            deleteOpnameDraft:           { cls: SAFE, timeout: 35000 },
+            setupOpnameSheet:            { cls: SAFE, timeout: 35000 },
+            setupOpnameDraftSheet:       { cls: SAFE, timeout: 35000 },
+            setupExpStatusSheet:         { cls: SAFE, timeout: 35000 },
+            updateOpnameEntry:           { cls: MUT,  timeout: 40000 },
+            deleteOpnameEntry:           { cls: MUT,  timeout: 40000 },
+            saveOutboundData:            { cls: CRIT, timeout: 40000 },
+            saveOpnameData:              { cls: CRIT, timeout: 60000 }
+        };
+        // Override per aksi tanpa mengubah kode: window.APP_CONFIG.REQUEST_POLICY = { getMasterData: { timeout: 30000 } }
+        if (cfg.REQUEST_POLICY && typeof cfg.REQUEST_POLICY === 'object') {
+            Object.keys(cfg.REQUEST_POLICY).forEach(function (k) {
+                var base = REQUEST_POLICY[k] || REQUEST_POLICY._default, o = cfg.REQUEST_POLICY[k] || {};
+                REQUEST_POLICY[k] = { cls: o.cls || base.cls, timeout: o.timeout || base.timeout,
+                                      retries: (typeof o.retries === 'number') ? o.retries : base.retries };
+            });
+        }
+        var CLASS_DEFAULTS = {
+            READ:                 { retries: 2, dedupe: true },
+            SAFE_RETRY:           { retries: 1, dedupe: false },
+            MUTATION:             { retries: 0, dedupe: false },
+            CRITICAL_TRANSACTION: { retries: 0, dedupe: false }
+        };
+        function policyOf(action) {
+            var p = REQUEST_POLICY[action] || REQUEST_POLICY._default;
+            var d = CLASS_DEFAULTS[p.cls];
+            return {
+                cls: p.cls, timeout: p.timeout,
+                retries: (typeof p.retries === 'number') ? p.retries : d.retries,
+                dedupe: d.dedupe
             };
-          }
-        });
-      }
-    }
-  };
-</script>
+        }
+
+        // ---------------------------------------------------------------
+        // ERROR MODEL — sama untuk kedua transport.
+        // Respons backend { success:false } BUKAN error transport: diteruskan
+        // apa adanya ke pemanggil (pola lama tetap berlaku).
+        // ---------------------------------------------------------------
+        var USER_MSG = {
+            OFFLINE:   'Perangkat sedang offline. Periksa koneksi internet.',
+            NETWORK:   'Koneksi sedang bermasalah. Sistem akan mencoba kembali.',
+            NETWORK_FINAL: 'Koneksi sedang bermasalah. Silakan coba lagi beberapa saat.',
+            TIMEOUT:   'Server lambat merespons. Silakan coba lagi beberapa saat.',
+            HTTP:      'Server Apps Script sedang bermasalah. Silakan coba lagi beberapa saat.',
+            PARSE:     'Respons server tidak dapat dibaca. Silakan muat ulang halaman.',
+            AUTH:      'Web App Apps Script menolak akses (butuh login / izin). Periksa pengaturan deployment "Who has access".',
+            SCRIPT:    'Terjadi kesalahan di server.',
+            UNCERTAIN: 'Koneksi terputus sebelum server menjawab. Perubahan MUNGKIN sudah tersimpan — data sedang dimuat ulang untuk memastikan. Jangan ulangi sebelum data diperbarui.',
+            TX_VERIFY: 'Koneksi terputus.\nSistem sedang memastikan apakah transaksi sudah tersimpan.\nJangan tekan tombol kirim kembali.'
+        };
+        function ApiError(type, detail) {
+            var e = new Error(USER_MSG[type] || USER_MSG.SCRIPT);
+            e.name = 'ApiError';
+            e.type = type;
+            e.userMessage = e.message;
+            e.detail = detail ? String(detail && detail.message || detail) : '';
+            return e;
+        }
+        function isTransportFailure(err) {
+            return !!(err && err.name === 'ApiError' &&
+                      (err.type === 'NETWORK' || err.type === 'TIMEOUT' || err.type === 'OFFLINE' || err.type === 'HTTP'));
+        }
+
+        // ---------------------------------------------------------------
+        // CONNECTION STATE — navigator.onLine hanya SINYAL AWAL. Status
+        // "terhubung" tetap ditentukan oleh respons API sungguhan.
+        // ---------------------------------------------------------------
+        var listeners = [];
+        var conn = { online: (global.navigator ? global.navigator.onLine !== false : true), netFailStreak: 0, lastOkAt: 0 };
+        function emit() { listeners.forEach(function (fn) { try { fn(conn); } catch (e) {} }); }
+        global.addEventListener('online',  function () { conn.online = true;  emit(); pump(); });
+        global.addEventListener('offline', function () { conn.online = false; emit(); });
+
+        // ---------------------------------------------------------------
+        // TRANSPORTS
+        // ---------------------------------------------------------------
+        var nativeLegacy = false;   // backend lama tanpa fungsi api() -> panggil fungsi langsung
+        function nativeSend(action, args) {
+            return new Promise(function (resolve, reject) {
+                var run = global.google.script.run
+                    .withSuccessHandler(resolve)
+                    .withFailureHandler(function (err) {
+                        var msg = (err && (err.message || err.toString())) || '';
+                        if (!nativeLegacy && /Script function not found:?\s*api\b/i.test(msg)) {
+                            nativeLegacy = true;               // rollout: frontend baru, kode.gs lama
+                            nativeSend(action, args).then(resolve, reject);
+                            return;
+                        }
+                        if (/network|connection|HTTP 0|failed to fetch|timed? ?out/i.test(msg)) reject(ApiError('NETWORK', msg));
+                        else if (/authoriz|permission|izin|login/i.test(msg)) reject(ApiError('AUTH', msg));
+                        else { var e = ApiError('SCRIPT', msg); e.userMessage = msg || USER_MSG.SCRIPT; reject(e); }
+                    });
+                if (nativeLegacy) run[action].apply(run, args);
+                else run.api(action, args);
+            });
+        }
+
+        function httpSend(action, args, timeoutMs) {
+            var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            var timedOut = false;
+            var timer = setTimeout(function () { timedOut = true; if (ctrl) ctrl.abort(); }, timeoutMs);
+            // `data` ikut dikirim agar kode.gs versi lama (yang membaca body.data)
+            // tetap bekerja selama masa transisi deploy.
+            var body = JSON.stringify({ v: 2, action: action, args: args, data: args.length ? args[0] : undefined });
+            return fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // simple request: tanpa preflight CORS
+                body: body,
+                redirect: 'follow',
+                credentials: 'omit',
+                cache: 'no-store',
+                signal: ctrl ? ctrl.signal : undefined
+            }).then(function (res) {
+                if (!res.ok) throw ApiError('HTTP', 'HTTP ' + res.status);
+                return res.text();
+            }).then(function (txt) {
+                try { return JSON.parse(txt); }
+                catch (e) {
+                    if (/<html|<!doctype/i.test(txt)) throw ApiError('AUTH', 'HTML diterima, bukan JSON');
+                    throw ApiError('PARSE', txt.slice(0, 120));
+                }
+            }).catch(function (err) {
+                if (err && err.name === 'ApiError') throw err;
+                if (timedOut || (err && err.name === 'AbortError')) throw ApiError('TIMEOUT', 'Batas ' + timeoutMs + ' ms');
+                throw ApiError('NETWORK', err);
+            }).finally(function () { clearTimeout(timer); });
+        }
+
+        /** google.script.run tidak bisa dibatalkan: yang dibatasi adalah WAKTU MENUNGGU. */
+        function withTimeout(promise, ms) {
+            return new Promise(function (resolve, reject) {
+                var t = setTimeout(function () { reject(ApiError('TIMEOUT', 'Batas ' + ms + ' ms')); }, ms);
+                promise.then(function (v) { clearTimeout(t); resolve(v); },
+                             function (e) { clearTimeout(t); reject(e); });
+            });
+        }
+
+        function send(action, args, timeoutMs) {
+            if (transportName() === 'native') return withTimeout(nativeSend(action, args), timeoutMs);
+            return httpSend(action, args, timeoutMs);
+        }
+
+        // ---------------------------------------------------------------
+        // GLOBAL REQUEST QUEUE — concurrency limit + prioritas.
+        //   0 = transaksi kritis · 1 = interaksi user · 2 = background
+        // Background (P2) menunggu selama ada transaksi kritis berjalan, dan
+        // antrian tidak pernah melepas lebih dari MAX_CONCURRENCY eksekusi
+        // Apps Script sekaligus (mengurangi kontensi LockService & kuota).
+        // ---------------------------------------------------------------
+        var MAX_CONCURRENCY = 4;
+        var active = 0, activeP0 = 0, seq = 0;
+        var waiting = [];
+        function pump() {
+            while (active < MAX_CONCURRENCY && waiting.length) {
+                waiting.sort(function (a, b) { return (a.priority - b.priority) || (a.seq - b.seq); });
+                var next = waiting[0];
+                if (next.priority >= 2 && activeP0 > 0) return;     // tunda background selama P0 jalan
+                waiting.shift();
+                start(next);
+            }
+        }
+        function start(job) {
+            active++;
+            if (job.priority === 0) activeP0++;
+            job.run().then(job.resolve, job.reject).finally(function () {
+                active--;
+                if (job.priority === 0) activeP0--;
+                pump();
+            });
+        }
+        function enqueue(priority, run) {
+            return new Promise(function (resolve, reject) {
+                waiting.push({ priority: priority, seq: ++seq, run: run, resolve: resolve, reject: reject });
+                pump();
+            });
+        }
+
+        // ---------------------------------------------------------------
+        // TELEMETRY (ringan; hanya menulis ke Console bila ?perf=1 /
+        // localStorage 'tcg-inv:perf' = '1'). Memisahkan:
+        //   queueMs  : menunggu slot antrian
+        //   netMs    : kirim -> respons (termasuk backend)
+        //   srvMs    : eksekusi backend (dari kode.gs, _srvMs)
+        //   xferMs   : netMs - srvMs  (overhead transport / jaringan)
+        // ---------------------------------------------------------------
+        var PERF_ON = qs('perf') === '1' || lsGet('tcg-inv:perf') === '1';
+        var metrics = [];
+        function record(m) {
+            metrics.push(m);
+            if (metrics.length > 300) metrics.shift();
+            if (PERF_ON) console.log('[api] ' + m.action + ' · ' + m.transport + ' · ' + (m.ok ? 'OK' : m.err) +
+                ' · total ' + m.totalMs + 'ms (antri ' + m.queueMs + ', jaringan+server ' + m.netMs +
+                (m.srvMs != null ? ', server ' + m.srvMs + ', transport ' + (m.netMs - m.srvMs) : '') + ')' +
+                (m.attempt ? ' · percobaan ' + (m.attempt + 1) : '') + (m.deduped ? ' · dedupe' : ''));
+        }
+        function now() { return (global.performance && performance.now) ? performance.now() : Date.now(); }
+        function report() {
+            var by = {};
+            metrics.forEach(function (m) {
+                var r = by[m.action] || (by[m.action] = { calls: 0, fail: 0, total: [], net: [], srv: [] });
+                r.calls++; if (!m.ok) r.fail++;
+                r.total.push(m.totalMs); r.net.push(m.netMs); if (m.srvMs != null) r.srv.push(m.srvMs);
+            });
+            function med(a) { if (!a.length) return null; var s = a.slice().sort(function (x, y) { return x - y; }); return s[Math.floor(s.length / 2)]; }
+            var rows = Object.keys(by).map(function (k) {
+                var r = by[k], s = med(r.srv), n = med(r.net);
+                return { action: k, transport: transportName(), calls: r.calls, fail: r.fail,
+                         p50_total_ms: med(r.total), p50_server_ms: s, p50_transport_ms: (s != null && n != null) ? n - s : null };
+            });
+            if (global.console && console.table) console.table(rows);
+            return rows;
+        }
+
+        function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+        function backoff(attempt) { return [500, 1000, 2000, 4000][Math.min(attempt, 3)] + Math.floor(Math.random() * 250); }
+
+        // ---------------------------------------------------------------
+        // AppApi.request(action, args, opt) -> Promise<hasil backend>
+        //   opt.priority  0|1|2         opt.timeout  override (ms)
+        //   opt.retries   override       opt.dedupe   false untuk mematikan
+        // ---------------------------------------------------------------
+        var inflight = new Map();
+        function request(action, args, opt) {
+            opt = opt || {};
+            args = Array.isArray(args) ? args : (args === undefined ? [] : [args]);
+            var pol = policyOf(action);
+            var timeout = opt.timeout || pol.timeout;
+            var retries = (typeof opt.retries === 'number') ? opt.retries : pol.retries;
+            var priority = (typeof opt.priority === 'number') ? opt.priority : (pol.cls === CRIT ? 0 : 1);
+            var dedupe = pol.dedupe && opt.dedupe !== false;
+
+            var dkey = null;
+            if (dedupe) {
+                try { dkey = action + '|' + JSON.stringify(args); } catch (e) { dkey = null; }
+                if (dkey && inflight.has(dkey)) {
+                    record({ action: action, transport: transportName(), ok: true, totalMs: 0, queueMs: 0, netMs: 0, srvMs: null, deduped: true });
+                    return inflight.get(dkey);
+                }
+            }
+
+            var tQueued = now();
+            var p = (async function () {
+                for (var attempt = 0; ; attempt++) {
+                    if (conn.online === false && global.navigator && global.navigator.onLine === false) {
+                        conn.netFailStreak++; emit();
+                        throw ApiError('OFFLINE');
+                    }
+                    var tStart = 0, res;
+                    try {
+                        res = await enqueue(priority, function () { tStart = now(); return send(action, args, timeout); });
+                        var tEnd = now();
+                        conn.netFailStreak = 0; conn.online = true; conn.lastOkAt = Date.now(); emit();
+                        record({ action: action, transport: transportName(), ok: true, attempt: attempt,
+                                 queueMs: Math.round(tStart - tQueued), netMs: Math.round(tEnd - tStart),
+                                 totalMs: Math.round(tEnd - tQueued), srvMs: (res && typeof res._srvMs === 'number') ? res._srvMs : null });
+                        return res;
+                    } catch (err) {
+                        var tFail = now();
+                        if (!(err && err.name === 'ApiError')) err = ApiError('SCRIPT', err);
+                        if (err.type === 'NETWORK' || err.type === 'OFFLINE') { conn.netFailStreak++; emit(); }
+                        record({ action: action, transport: transportName(), ok: false, err: err.type, attempt: attempt,
+                                 queueMs: Math.round((tStart || tFail) - tQueued), netMs: tStart ? Math.round(tFail - tStart) : 0,
+                                 totalMs: Math.round(tFail - tQueued), srvMs: null });
+                        var retryable = isTransportFailure(err) && err.type !== 'OFFLINE' &&
+                                        !(err.type === 'TIMEOUT' && attempt >= 1);   // timeout diulang maksimal sekali
+                        if (retryable && attempt < retries) { await sleep(backoff(attempt)); continue; }
+                        // Hasil mutasi tidak pasti: jangan disamarkan sebagai "gagal".
+                        if (isTransportFailure(err) && (pol.cls === MUT || pol.cls === SAFE) && err.type !== 'OFFLINE') {
+                            var u = ApiError('UNCERTAIN', err.detail); u.cause = err.type; throw u;
+                        }
+                        if (err.type === 'NETWORK') { err.userMessage = err.message = USER_MSG.NETWORK_FINAL; }
+                        throw err;
+                    }
+                }
+            })();
+            if (dkey) {
+                inflight.set(dkey, p);
+                p.then(function () { inflight.delete(dkey); }, function () { inflight.delete(dkey); });
+            }
+            return p;
+        }
+
+        // ---------------------------------------------------------------
+        // AppApi.transact(action, payload, opt) — TRANSAKSI KRITIS.
+        //
+        //   SUBMIT -> TX ID -> KIRIM -> gagal transport? -> VERIFIKASI
+        //       ├─ found            -> CONFIRMED (tidak dikirim ulang)
+        //       ├─ pending          -> tunggu, verifikasi lagi
+        //       └─ tidak ada        -> kirim ulang DENGAN TX ID YANG SAMA
+        //                              (backend menolak duplikat di dalam lock)
+        //   Tidak pernah: timeout -> langsung insert lagi.
+        //
+        // Hasil: { state: 'CONFIRMED'|'REJECTED'|'UNKNOWN', result, txId }
+        //   REJECTED = backend menjawab success:false (validasi dsb.), pasti TIDAK tersimpan.
+        //   UNKNOWN  = belum bisa dipastikan; pemanggil WAJIB menahan data untuk
+        //              diverifikasi ulang (lihat SIGAP.txQueue), bukan meminta user kirim ulang.
+        // ---------------------------------------------------------------
+        function newTxId() {
+            try { if (global.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+            return 'tx-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+        }
+
+        async function verify(txId, onPhase) {
+            var waitPending = [2000, 3000, 5000, 8000, 10000, 12000];   // ±40 dtk menunggu request pertama
+            var netFails = 0;
+            for (var i = 0; i < waitPending.length; i++) {
+                try {
+                    var v = await request('verifyTransaction', [{ txId: txId }], { priority: 0, dedupe: false });
+                    if (v && v.found) return { found: true, result: v };
+                    if (!(v && v.pending)) return { found: false };
+                    if (onPhase) onPhase('WAITING_SERVER');
+                } catch (err) {
+                    if (++netFails >= 3) return { unknown: true, error: err };
+                }
+                await sleep(waitPending[i]);
+            }
+            return { unknown: true };
+        }
+
+        async function transact(action, payload, opt) {
+            opt = opt || {};
+            payload = payload || {};
+            if (!payload._idempotencyKey) payload._idempotencyKey = newTxId();
+            var txId = payload._idempotencyKey;
+            var onPhase = opt.onPhase || function () {};
+            var maxSends = opt.maxSends || 3;
+
+            if (opt.verifyFirst) {   // lanjutan setelah reload / crash: pastikan dulu
+                onPhase('VERIFYING');
+                var v0 = await verify(txId, onPhase);
+                if (v0.found) return { state: 'CONFIRMED', result: v0.result, txId: txId, verified: true };
+                if (v0.unknown) return { state: 'UNKNOWN', txId: txId };
+            }
+
+            for (var sendNo = 0; sendNo < maxSends; sendNo++) {
+                try {
+                    onPhase(sendNo === 0 ? 'SENDING' : 'RESENDING');
+                    var res = await request(action, [payload], { priority: 0, retries: 0 });
+                    return { state: (res && res.success) ? 'CONFIRMED' : 'REJECTED', result: res, txId: txId };
+                } catch (err) {
+                    if (!isTransportFailure(err)) {
+                        // Error skrip di server: transaksi di dalam try/catch backend -> tidak tersimpan.
+                        if (err && err.type === 'AUTH') return { state: 'REJECTED', result: { success: false, message: err.userMessage }, txId: txId };
+                        onPhase('VERIFYING', err);
+                        var vs = await verify(txId, onPhase);
+                        if (vs.found) return { state: 'CONFIRMED', result: vs.result, txId: txId, verified: true };
+                        return { state: 'REJECTED', result: { success: false, message: err.userMessage || USER_MSG.SCRIPT }, txId: txId };
+                    }
+                    if (err.type === 'OFFLINE') return { state: 'UNKNOWN', txId: txId, offline: true, error: err };
+                    onPhase('VERIFYING', err);
+                    var vr = await verify(txId, onPhase);
+                    if (vr.found) return { state: 'CONFIRMED', result: vr.result, txId: txId, verified: true };
+                    if (vr.unknown) return { state: 'UNKNOWN', txId: txId, error: err };
+                    await sleep(backoff(sendNo));      // terverifikasi BELUM tersimpan -> aman kirim ulang (tx ID sama)
+                }
+            }
+            return { state: 'UNKNOWN', txId: txId };
+        }
+
+        global.APP_ENV = APP_ENV;
+        global.REQUEST_POLICY = REQUEST_POLICY;
+        global.AppApi = {
+            request: request,
+            transact: transact,
+            verify: verify,
+            newTxId: newTxId,
+            policyOf: policyOf,
+            isTransportFailure: isTransportFailure,
+            messages: USER_MSG,
+            connection: conn,
+            onConnection: function (fn) { listeners.push(fn); },
+            metrics: metrics,
+            report: report,
+            get perfEnabled() { return PERF_ON; },
+            bootT0: BOOT_T0,
+            stats: function () { return { active: active, waiting: waiting.length, inflight: inflight.size }; }
+        };
+    })(window);
+    </script>
 
     <style>
         :root {
@@ -96,14 +567,23 @@
             --blue: #0369a1;
             --blue-soft: #eff8ff;
 
-            /* Type scale (major-third-ish) */
-            --fs-display: 1.55rem;
-            --fs-h1: 1.15rem;
-            --fs-h2: 0.98rem;
-            --fs-body: 0.875rem;
-            --fs-sm: 0.8rem;
-            --fs-xs: 0.72rem;
-            --fs-eyebrow: 0.68rem;
+            /* Type scale — [UPGRADE] dikonsolidasi ke 8 langkah (px pada root 16px).
+               Seluruh ukuran huruf di file ini kini mengacu ke token di bawah,
+               bukan angka acak (0.62 / 0.64 / 0.68 / 0.72 / 0.78 / 0.82 / 0.825 /
+               0.88 / 0.925 rem, dst.).
+                 display 24.8 · h1 18 · h2 16 · lead 15 · body 14 · sm 13 · xs 12 · caption 11 */
+            --fs-display: 1.55rem;   /* judul halaman besar */
+            --fs-h1: 1.125rem;       /* judul brand / modal */
+            --fs-h2: 1rem;           /* judul kartu / section */
+            --fs-lead: 0.9375rem;    /* angka penekanan (QTY, saldo) */
+            --fs-body: 0.875rem;     /* isi tabel, input, tombol */
+            --fs-sm: 0.8125rem;      /* teks sekunder, meta baris */
+            --fs-xs: 0.75rem;        /* label form, header tabel, badge */
+            --fs-caption: 0.6875rem; /* eyebrow, chip kalender, penghitung */
+            --fs-eyebrow: var(--fs-caption);
+            --lh-tight: 1.2;
+            --lh-body: 1.5;
+            --tap: 44px;             /* target sentuh minimum */
 
             /* Radius & shadow */
             --r-sm: 8px;
@@ -276,7 +756,7 @@
         .btn-save-big {
             width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
             background:linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color:#fff; font-family:'Sora',sans-serif; font-size:0.95rem; font-weight:800;
+            color:#fff; font-family:'Sora',sans-serif; font-size:var(--fs-lead); font-weight:800;
             padding:14px; border-radius:var(--r-md); border:none; cursor:pointer;
             transition:all 0.22s; letter-spacing:0.01em; box-shadow: 0 4px 14px rgba(15, 118, 110, 0.25);
         }
@@ -344,7 +824,7 @@
         /* ---------- Opname input ---------- */
         .opname-input {
             width:110px; text-align:right; background:var(--surface); border:1.5px solid var(--border-light);
-            border-radius:8px; padding:8px 10px; font-family:'JetBrains Mono',monospace; font-size:0.85rem; font-weight:600;
+            border-radius:8px; padding:8px 10px; font-family:'JetBrains Mono',monospace; font-size:var(--fs-body); font-weight:600;
             color:var(--text); outline:none; transition:all 0.2s; font-variant-numeric: tabular-nums;
         }
         .opname-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
@@ -427,6 +907,7 @@
         #sync-pill.syncing { background:var(--accent-soft); color:var(--accent); border-color:rgba(15,118,110,0.25); }
         #sync-pill.ok      { background:var(--green-soft); color:var(--green); border-color:rgba(21,128,61,0.2); }
         #sync-pill.warn    { background:var(--amber-soft); color:var(--amber); border-color:rgba(180,83,9,0.25); }
+        #sync-pill.offline { background:var(--red-soft); color:var(--red); border-color:rgba(220,38,38,0.25); }
         #sync-pill .dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
         #sync-pill.syncing .dot { animation:pulse-ring 1.4s infinite; }
 
@@ -632,7 +1113,7 @@
         #exp-bell:hover { transform:translateY(-1px); box-shadow:0 4px 14px rgba(180, 83, 9, 0.2); }
         #exp-bell-count {
             position:absolute; top:-6px; right:-6px; background:var(--red); color:#fff;
-            font-size:0.62rem; font-weight:800; border-radius:99px; min-width:18px; height:18px;
+            font-size:var(--fs-caption); font-weight:800; border-radius:99px; min-width:18px; height:18px;
             display:flex; align-items:center; justify-content:center; padding:0 4px; border:2px solid var(--surface);
         }
 
@@ -669,10 +1150,10 @@
         .cal-day.has-items { cursor:pointer; }
         .cal-day.has-items:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(36,29,24,0.08); border-color:var(--accent); }
         .cal-day.selected { border:2px solid var(--accent); background:var(--accent-soft); }
-        .cal-day-num { font-size:0.8rem; font-weight:700; color:var(--text-muted); line-height:1; font-variant-numeric:tabular-nums; }
+        .cal-day-num { font-size:var(--fs-sm); font-weight:700; color:var(--text-muted); line-height:1; font-variant-numeric:tabular-nums; }
         .cal-day.today .cal-day-num { color:var(--accent); }
         .cal-chip {
-            font-size:0.62rem; font-weight:800; border-radius:6px; padding:2px 5px;
+            font-size:var(--fs-caption); font-weight:800; border-radius:6px; padding:2px 5px;
             line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
         }
         .cal-chip-expired { background:var(--red-soft);   color:var(--red);   border:1px solid rgba(220, 38, 38, 0.25); }
@@ -704,7 +1185,7 @@
         .exp-filter-ctl { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
         .exp-year-pill, .exp-period-select, .exp-filter-reset {
             height:34px; min-height:34px; padding:0 12px; border-radius:var(--r-sm);
-            font-family:'Sora', sans-serif; font-size:0.8rem; font-weight:700; line-height:1;
+            font-family:'Sora', sans-serif; font-size:var(--fs-sm); font-weight:700; line-height:1;
         }
         .exp-year-pill {
             display:inline-flex; align-items:center; justify-content:center;
@@ -735,7 +1216,7 @@
         .exp-table-summary { font-size:var(--fs-xs); font-weight:600; color:var(--text-dim); font-variant-numeric:tabular-nums; }
         .exp-hidden-note {
             display:inline-flex; align-items:center; gap:6px; cursor:pointer;
-            font-size:0.68rem; font-weight:700; line-height:1.3;
+            font-size:var(--fs-caption); font-weight:700; line-height:1.3;
             background:var(--surface); border:1px dashed var(--border-light); color:var(--text-dim);
             border-radius:var(--r-full); padding:4px 10px;
             transition:color 0.18s var(--ease), border-color 0.18s var(--ease), background 0.18s var(--ease);
@@ -743,7 +1224,7 @@
         .exp-hidden-note:hover { color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
 
         .emh-chip {
-            font-size:0.62rem; font-weight:800; border-radius:6px; padding:2px 6px; line-height:1.3;
+            font-size:var(--fs-caption); font-weight:800; border-radius:6px; padding:2px 6px; line-height:1.3;
             white-space:nowrap; background:var(--surface2); color:var(--text-dim); border:1px solid var(--border);
         }
         .exp-month-hdr {
@@ -753,19 +1234,19 @@
         }
         .exp-month-hdr:hover { background:var(--accent-soft2); }
         .exp-month-hdr .emh-title {
-            display:flex; align-items:center; gap:8px; font-size:0.8rem; font-weight:800;
+            display:flex; align-items:center; gap:8px; font-size:var(--fs-sm); font-weight:800;
             color:var(--text); letter-spacing:0.03em; text-transform:uppercase;
         }
         .exp-month-hdr.is-now .emh-title { color:var(--accent); }
         .exp-month-hdr.is-past { background:linear-gradient(90deg, var(--surface2) 0%, transparent 100%); }
         .exp-month-hdr .emh-meta { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
         .exp-now-tag {
-            font-size:0.62rem; font-weight:800; letter-spacing:0.04em; text-transform:uppercase;
+            font-size:var(--fs-caption); font-weight:800; letter-spacing:0.04em; text-transform:uppercase;
             background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-brd);
             border-radius:var(--r-full); padding:2px 8px;
         }
         .exp-past-tag {
-            font-size:0.62rem; font-weight:800; letter-spacing:0.04em; text-transform:uppercase;
+            font-size:var(--fs-caption); font-weight:800; letter-spacing:0.04em; text-transform:uppercase;
             background:var(--surface2); color:var(--text-dim); border:1px solid var(--border-light);
             border-radius:var(--r-full); padding:2px 8px;
         }
@@ -825,13 +1306,152 @@
             .cal-chip-word { display:none; }
         }
 
+        /* =====================================================================
+           [UPGRADE] KELAS SEL TABEL (menggantikan style inline berulang)
+           ===================================================================== */
+        .td-meta  { color:var(--text-muted); font-size:var(--fs-sm); font-weight:500; }
+        .td-name  { font-weight:700; color:var(--text); }
+        .td-num   { text-align:right; font-weight:800; font-size:var(--fs-lead); white-space:nowrap; font-variant-numeric:tabular-nums; }
+        .td-empty { text-align:center; padding:40px 16px; color:var(--text-dim); font-size:var(--fs-sm); }
+        .group-hdr-title { font-size:var(--fs-sm); font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px; }
+        .group-hdr-title .ph { font-size:1.15rem; }
+        .group-hdr-meta  { display:flex; align-items:center; gap:10px; }
+        .group-hdr-count { font-size:var(--fs-caption); font-weight:700; color:var(--text-dim); letter-spacing:0.02em; }
+        .group-hdr-caret { color:var(--text-dim); font-size:1.1rem; transition:transform 0.25s; }
+        .group-hdr-inner:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+        body { line-height:var(--lh-body); }
+
+        /* Tabel log & exp: sel tidak dilipat (pil tanggal tetap satu baris); lebar
+           berlebih digeser di dalam kontainer tabel, bukan halaman. */
+        #modal-tbody td, #exp-day-tbody td, #exp-alert-modal-body td { white-space:nowrap; }
+        #detail-modal .data-table { min-width:560px; }
+
+        /* Scroll tabel horizontal yang TERKENDALI: tidak ikut menggeser halaman. */
+        .card div[style*="overflow-x:auto"] { -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; }
+
+        /* =====================================================================
+           [UPGRADE] TOUCH-FIRST — berlaku pada perangkat sentuh di SEMUA lebar
+           (tablet & HP), tanpa mengubah tampilan desktop dengan mouse.
+           ===================================================================== */
+        @media (pointer: coarse) {
+            .tab-btn { min-height:48px; }
+            .btn-primary, .btn-ghost, .btn-warn, .btn-danger-ghost,
+            .exp-filter-reset, .exp-year-pill, .exp-period-select { min-height:var(--tap); }
+            .inp { min-height:48px; }
+            .ts-wrapper.single .ts-control { min-height:48px; }
+            .btn-row { width:var(--tap); height:var(--tap); font-size:1.1rem; }
+            .btn-scan-inline { width:var(--tap); height:var(--tap); right:2px; }
+            .cal-nav-btn { flex-shrink:0; min-width:var(--tap); }
+            .exp-view-switch button { min-height:var(--tap); padding:6px 14px; }
+            .exp-view-switch { padding:2px; }
+            #stock-tbody button { min-height:var(--tap); min-width:var(--tap); white-space:nowrap; }
+            input.inp[style*="padding-right:44px"] { padding-right:54px !important; }
+            .btn-scan-chip { min-height:var(--tap); padding:8px 14px; }
+            .cal-nav-btn, #exp-bell { width:var(--tap); height:var(--tap); }
+            .group-hdr-inner, .exp-month-hdr { min-height:var(--tap); }
+            .exp-status-select { min-height:40px; }
+            .exp-row-check, #exp-check-all { width:22px !important; height:22px !important; }
+            .ts-dropdown .option { padding:12px 14px !important; }
+        }
+        /* Efek hover "melayang" tidak berguna di layar sentuh dan memicu repaint. */
+        @media (hover: none) {
+            .btn-primary:hover, .btn-save-big:hover, .btn-row:hover, .cal-day.has-items:hover,
+            .exp-alert-pill:hover, #exp-bell:hover, .exp-hit-chip:hover,
+            #tab-exp .stat-card.is-clickable:hover { transform:none; box-shadow:inherit; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important; }
+        }
+
+        /* =====================================================================
+           [UPGRADE] MOBILE (≤ 640px) — terasa seperti aplikasi, bukan desktop
+           yang diperkecil. Target 320 / 360 / 375 / 390 / 414 / 480 px.
+           ===================================================================== */
+        @media (max-width: 640px) {
+            /* Header ringkas */
+            header > div:first-child { height:58px !important; padding:0 12px !important; gap:10px !important; }
+            header > div:nth-child(2) { padding:0 4px !important; }
+            .brand-badge { width:36px; height:36px; border-radius:11px; }
+            .brand-badge .ph-fill { font-size:1.2rem !important; }
+            header .display-title { font-size:var(--fs-h2) !important; }
+            #sync-pill { max-width:42vw; overflow:hidden; text-overflow:ellipsis; padding:6px 10px; }
+            #sync-pill-text { overflow:hidden; text-overflow:ellipsis; }
+
+            /* Navigasi tab: geser horizontal + snap */
+            .tab-nav { scroll-snap-type:x proximity; padding:0 8px; }
+            .tab-btn { scroll-snap-align:center; padding:12px 14px; font-size:var(--fs-sm); }
+
+            /* Konten */
+            main { padding:12px 12px calc(20px + env(safe-area-inset-bottom)) !important; }
+            .card { border-radius:var(--r-md); }
+            .card-header { padding:14px 14px; }
+            .card > div[style*="padding:20px"],
+            .card > div[style*="padding:16px 20px"],
+            .card > div[style*="padding:14px 20px"] { padding:14px !important; }
+            .keluar-grid { gap:12px; }
+            .section-title { font-size:var(--fs-h2); }
+            .display-title { font-size:1.25rem; }
+
+            /* Form: input 16px mencegah auto-zoom iOS saat fokus */
+            .inp, .ts-wrapper.single .ts-control, .ts-control input,
+            .opname-input, .exp-period-select, select.inp { font-size:16px !important; }
+            .date-wrap { flex:1 1 100%; justify-content:space-between; }
+            .date-wrap input[type="date"] { flex:1 1 0; min-width:0; font-size:16px; }
+            .card-header .btn-primary[onclick^="apply"],
+            .card-header .btn-primary[onclick^="loadStockData"] { flex:1 1 100%; }
+            .card-header div[style*="min-width:180px"],
+            .card-header div[style*="min-width:170px"],
+            .card-header div[style*="min-width:200px"] { min-width:100% !important; flex:1 1 100% !important; }
+
+            /* Tabel: scroll horizontal terkendali, huruf TIDAK dikecilkan */
+            .data-table thead th { padding:10px 12px; white-space:nowrap; }
+            .data-table tbody td { padding:11px 12px; }
+            .card div[style*="max-height:520px"],
+            .card div[style*="max-height:560px"],
+            .card div[style*="max-height:620px"] { max-height:68dvh !important; }
+            .opname-input { width:96px; }
+
+            /* KPI: dua kolom rapat */
+            .stat-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+            .stat-card { padding:12px 14px; }
+            .stat-value { font-size:1.25rem; }
+
+            /* Modal -> bottom sheet, aman safe-area & keyboard */
+            #detail-modal, #exp-alert-modal, #scan-modal { align-items:flex-end; padding:0; }
+            #detail-modal > div, #exp-alert-modal > div, .scan-shell {
+                max-width:100% !important; max-height:92dvh !important; border-radius:20px 20px 0 0 !important;
+                padding-bottom:env(safe-area-inset-bottom);
+            }
+            #detail-modal > div > div[style*="overflow-y:auto"],
+            #exp-alert-modal-body { overflow-y:auto; overscroll-behavior:contain; }
+
+            /* Backdrop blur mahal di GPU HP kelas bawah -> latar solid */
+            #loader, #detail-modal, #exp-alert-modal, #scan-modal { -webkit-backdrop-filter:none; backdrop-filter:none; }
+            #loader { background:rgba(247, 245, 242, 0.94); }
+
+            /* SweetAlert2: lebar penuh, tombol besar, input tanpa zoom */
+            .swal2-container { padding:12px !important; }
+            .swal2-popup:not(.swal2-toast) { width:100% !important; max-width:100% !important; padding:18px 14px !important; }
+            .swal2-title { font-size:var(--fs-h1) !important; }
+            .swal2-html-container { font-size:var(--fs-body) !important; margin:10px 4px 0 !important; }
+            .swal2-input { font-size:16px !important; height:var(--tap) !important; }
+            .swal2-actions { width:100%; gap:8px; }
+            .swal2-actions button { flex:1 1 0; min-height:var(--tap); margin:0 !important; }
+        }
+        @media (max-width: 380px) {
+            header .eyebrow { display:none; }
+            .tab-btn { padding:12px 11px; }
+            .stat-value { font-size:1.1rem; }
+            .keluar-grid div[style*="grid-template-columns:1fr 1fr 1fr"] { gap:8px !important; }
+        }
+
     </style>
 </head>
 <body>
 
     <div id="loader">
         <div class="spinner mb-3"></div>
-        <p style="font-size:var(--fs-sm); font-weight:800; color:var(--text-muted); letter-spacing:0.1em; text-transform:uppercase; margin-top:14px;">Memproses...</p>
+        <p id="loader-text" role="status" aria-live="polite" style="font-size:var(--fs-sm); font-weight:800; color:var(--text-muted); letter-spacing:0.1em; text-transform:uppercase; margin-top:14px; text-align:center; padding:0 16px;">Memproses...</p>
     </div>
 
     <!-- DETAIL STOCK LOG MODAL -->
@@ -841,7 +1461,7 @@
                 <div style="display:flex; align-items:center; gap:10px;">
                     <i class="ph ph-chart-line-up" style="color:var(--accent); font-size:1.25rem;"></i>
                     <span style="font-size:var(--fs-body); font-weight:700; color:var(--text-muted);">Detail Log:</span>
-                    <span id="modal-item-name" style="font-size:0.98rem; font-weight:800; color:var(--accent);"></span>
+                    <span id="modal-item-name" style="font-size:var(--fs-h2); font-weight:800; color:var(--accent);"></span>
                 </div>
                 <button onclick="closeModal()" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:6px; border-radius:8px; transition:all 0.22s; font-size:1.3rem;" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text-dim)'">
                     <i class="ph ph-x"></i>
@@ -898,7 +1518,7 @@
             <div class="brand-badge"><i class="ph-fill ph-package" style="color:#fff; font-size:1.4rem;"></i></div>
             <div>
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <h1 class="display-title" style="font-size:1.12rem;">Trans Cafe Gading</h1>
+                    <h1 class="display-title" style="font-size:var(--fs-h1);">Trans Cafe Gading</h1>
                     <span class="logo-dot"></span>
                 </div>
                 <p class="eyebrow" style="margin:2px 0 0;">Warehouse Inventory System</p>
@@ -1524,9 +2144,9 @@
                     <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #241d18; padding-bottom:10px;">
                         <div>
                             <div style="font-size:1.4rem; font-weight:800; letter-spacing:-0.02em;">Trans Cafe Gading</div>
-                            <div style="font-size:0.85rem; color:#555;">Laporan Stock Opname</div>
+                            <div style="font-size:var(--fs-body); color:#555;">Laporan Stock Opname</div>
                         </div>
-                        <div style="text-align:right; font-size:0.8rem; color:#555;">
+                        <div style="text-align:right; font-size:var(--fs-sm); color:#555;">
                             <div>Periode: <b id="print-periode">Semua</b></div>
                             <div>Dicetak: <span id="print-date"></span></div>
                         </div>
@@ -1641,9 +2261,14 @@
             },
 
             // ---------- PERFORMANCE INSTRUMENTATION ----------
+            // [UPGRADE] Aktif dengan ?perf=1 atau localStorage 'tcg-inv:perf'='1'
+            // (sama di Apps Script & GitHub). Waktu dicatat relatif terhadap
+            // frontend_start (script pertama di <head>). Request API diukur terpisah
+            // oleh AppApi (antri / jaringan / server) -> AppApi.report().
             perf: {
-                enabled: false,
+                enabled: (typeof AppApi !== 'undefined' && AppApi.perfEnabled),
                 _marks: {},
+                _log: [],
                 mark: function(name) {
                     if (!this.enabled && !SIGAP.config.PERF_LOG_ENABLED) return;
                     this._marks[name] = performance.now();
@@ -1651,32 +2276,41 @@
                 measure: function(label, startMark) {
                     if (!this.enabled && !SIGAP.config.PERF_LOG_ENABLED) return 0;
                     var start = this._marks[startMark] || 0;
-                    var d = performance.now() - start;
-                    console.log('[SIGAP.perf] ' + label + ': ' + d.toFixed(0) + 'ms');
+                    var t = performance.now();
+                    var d = t - start;
+                    var sinceBoot = t - ((typeof AppApi !== 'undefined') ? AppApi.bootT0 : 0);
+                    this._log.push({ label: label, ms: Math.round(d), at_ms_since_frontend_start: Math.round(sinceBoot) });
+                    console.log('[SIGAP.perf] ' + label + ': ' + d.toFixed(0) + 'ms (t+' + sinceBoot.toFixed(0) + 'ms)');
                     return d;
                 },
                 summary: function() {
-                    var entries = Object.keys(this._marks).map(function(k) {
-                        return { name: k, time: this._marks[k] };
-                    }.bind(this)).sort(function(a, b) { return a.time - b.time; });
-                    console.table(entries);
+                    if (console.table) console.table(this._log);
+                    if (typeof AppApi !== 'undefined') AppApi.report();
+                    return this._log;
                 }
             },
 
             // ---------- ERROR CLASSIFICATION ----------
+            // [UPGRADE] Error transport sudah diklasifikasi oleh AppApi (err.type).
+            // Fungsi ini tetap ada untuk respons backend { success:false }.
             classifyError: function(err, res) {
-                if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'NETWORK_ERROR';
-                if (err && (err.message === 'TIMEOUT' || err.toString().includes('TIMEOUT'))) return 'TIMEOUT';
+                if (err && err.name === 'ApiError') return err.type;
+                if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'OFFLINE';
                 if (res && res.message && /sudah pernah|sudah ada|duplicate/i.test(res.message)) return 'DUPLICATE';
                 if (res && !res.success) return 'SERVER_ERROR';
                 if (err && /validation|validasi/i.test(err.message || '')) return 'VALIDATION_ERROR';
                 return 'UNKNOWN';
             },
 
+            // Pesan untuk user — TIDAK pernah menampilkan "TypeError: Failed to fetch".
             errorMessage: function(type) {
+                var m = (typeof AppApi !== 'undefined') ? AppApi.messages : {};
                 var msgs = {
-                    'NETWORK_ERROR': 'Tidak ada koneksi internet. Data disimpan di antrian lokal.',
-                    'TIMEOUT': 'Server memproses terlalu lama. Sistem akan mencoba ulang otomatis.',
+                    'OFFLINE': m.OFFLINE,
+                    'NETWORK': m.NETWORK,
+                    'NETWORK_ERROR': m.NETWORK,
+                    'TIMEOUT': m.TIMEOUT,
+                    'UNCERTAIN': m.UNCERTAIN,
                     'DUPLICATE': 'Data ini sudah pernah disimpan.',
                     'SERVER_ERROR': 'Terjadi kesalahan di server.',
                     'VALIDATION_ERROR': 'Data tidak valid.',
@@ -1711,13 +2345,25 @@
             },
 
             // ---------- TRANSACTION QUEUE (IndexedDB) ----------
+            // [UPGRADE · DATA INTEGRITY]
+            //  - Transaksi DISIMPAN di IndexedDB SEBELUM dikirim (tahan reload / tab tertutup).
+            //  - Pengiriman lewat AppApi.transact(): tx ID tetap, timeout -> VERIFIKASI,
+            //    kirim ulang hanya bila terverifikasi BELUM tersimpan (tx ID sama).
+            //  - Entry yang pernah terkirim (attempts > 0) SELALU diverifikasi dulu saat
+            //    dilanjutkan — termasuk yang tertinggal di status PROCESSING karena tab
+            //    ditutup di tengah request (versi lama melupakan entry seperti ini).
+            //  - Entry yang terlalu tua untuk diverifikasi (ledger backend 72 jam) TIDAK
+            //    dikirim ulang; ditandai NEEDS_REVIEW agar dicek manual.
             txQueue: {
                 _db: null,
                 _paused: false,
                 _processing: false,
+                _rerun: false,
+                _waiters: new Map(),          // txId -> resolve(outcome) milik UI yang sedang menunggu
                 DB_NAME: 'sigap_tx_queue',
                 DB_VERSION: 1,
                 STORE: 'transactions',
+                VERIFY_WINDOW_MS: 70 * 60 * 60 * 1000,
 
                 open: function() {
                     var self = this;
@@ -1739,11 +2385,12 @@
 
                 enqueue: function(action, payload, txId) {
                     var entry = {
-                        txId: txId || crypto.randomUUID(),
+                        txId: txId || (payload && payload._idempotencyKey) || AppApi.newTxId(),
                         action: action,
                         payload: payload,
                         createdAt: Date.now(),
                         status: 'PENDING',
+                        attempts: 0,          // berapa kali benar-benar DIKIRIM ke server
                         retryCount: 0,
                         lastError: null,
                         serverResult: null
@@ -1817,6 +2464,9 @@
                     });
                 },
 
+                /** Daftar antrian (untuk pengecekan manual di Console). */
+                list: function() { return this.getAll().then(function(all) { if (console.table) console.table(all.map(function(e) { return { txId: e.txId, action: e.action, status: e.status, attempts: e.attempts, createdAt: new Date(e.createdAt).toLocaleString('id-ID'), lastError: e.lastError }; })); return all; }); },
+
                 pause: function() { this._paused = true; },
 
                 resume: function() {
@@ -1824,123 +2474,108 @@
                     this.processQueue();
                 },
 
+                /**
+                 * Dipakai UI (saveOutbound): simpan dulu ke antrian, lalu tunggu hasil
+                 * pasti dari server. Resolve: { state: CONFIRMED | REJECTED | UNKNOWN |
+                 * QUEUED_OFFLINE, result }.
+                 */
+                submit: function(action, payload) {
+                    var self = this;
+                    return self.enqueue(action, payload).then(function(entry) {
+                        return new Promise(function(resolve) {
+                            if (navigator.onLine === false) {
+                                resolve({ state: 'QUEUED_OFFLINE', txId: entry.txId });
+                                self._refreshPill();
+                                return;
+                            }
+                            self._waiters.set(entry.txId, resolve);
+                            self.processQueue();
+                        });
+                    });
+                },
+
+                _settleWaiter: function(txId, outcome) {
+                    var w = this._waiters.get(txId);
+                    if (!w) return false;
+                    this._waiters.delete(txId);
+                    try { w(outcome); } catch (e) { console.error(e); }
+                    return true;
+                },
+
                 processQueue: function() {
-                    if (this._paused || this._processing) return;
+                    if (this._paused) return;
+                    if (this._processing) { this._rerun = true; return; }
                     this._processing = true;
+                    this._rerun = false;
                     var self = this;
 
                     self.getAll().then(function(entries) {
                         var pending = entries.filter(function(e) {
-                            return e.status === 'PENDING' || e.status === 'RETRY';
+                            return e.status === 'PENDING' || e.status === 'RETRY' || e.status === 'VERIFY';
                         }).sort(function(a, b) { return a.createdAt - b.createdAt; });
-
-                        if (pending.length === 0) {
-                            self._processing = false;
-                            self._updateSyncPill(entries);
-                            return;
-                        }
 
                         var chain = Promise.resolve();
                         pending.forEach(function(entry) {
-                            chain = chain.then(function() { return self._processOne(entry); });
+                            chain = chain.then(function() { return self._paused ? null : self._processOne(entry); });
                         });
-                        chain.finally(function() {
-                            self._processing = false;
-                            self.getAll().then(function(all) { self._updateSyncPill(all); });
-                        });
-                    }).catch(function() { self._processing = false; });
+                        return chain;
+                    }).catch(function(e) { console.error(e); }).finally(function() {
+                        self._processing = false;
+                        self._refreshPill();
+                        if (self._rerun) self.processQueue();   // entry baru masuk selama proses berjalan
+                    });
                 },
 
                 _processOne: function(entry) {
                     var self = this;
-                    return self.update(entry.txId, { status: 'PROCESSING' }).then(function() {
-                        return new Promise(function(resolve) {
-                            var done = false;
-                            var timer = setTimeout(function() {
-                                if (done) return;
-                                done = true;
-                                // Timeout — verify transaction first
-                                self._verifyAndRetry(entry).then(resolve);
-                            }, 45000);
+                    // Offline: jangan sentuh entry (attempts tidak bertambah), tunggu event 'online'.
+                    if (navigator.onLine === false) { self.pause(); return Promise.resolve(); }
+                    var sentBefore = (entry.attempts || 0) > 0 || entry.status === 'VERIFY' || entry.status === 'PROCESSING';
+                    var age = Date.now() - (entry.createdAt || 0);
 
-                            google.script.run
-                                .withSuccessHandler(function(res) {
-                                    if (done) return;
-                                    done = true;
-                                    clearTimeout(timer);
-                                    if (res && res.success) {
-                                        self.update(entry.txId, { status: 'SYNCED', serverResult: res })
-                                            .then(function() { return self.remove(entry.txId); })
-                                            .then(function() {
-                                                SIGAP.toast('Data tersimpan ✓', 'success', 2500);
-                                                self._onSynced(entry, res);
-                                                resolve();
-                                            });
-                                    } else {
-                                        var errType = SIGAP.classifyError(null, res);
-                                        if (errType === 'DUPLICATE') {
-                                            self.update(entry.txId, { status: 'SYNCED', serverResult: res })
-                                                .then(function() { return self.remove(entry.txId); })
-                                                .then(resolve);
-                                        } else {
-                                            self._handleFailure(entry, res ? res.message : 'Unknown error').then(resolve);
-                                        }
-                                    }
-                                })
-                                .withFailureHandler(function(err) {
-                                    if (done) return;
-                                    done = true;
-                                    clearTimeout(timer);
-                                    var errType = SIGAP.classifyError(err, null);
-                                    if (errType === 'NETWORK_ERROR') {
-                                        self.update(entry.txId, { status: 'PENDING', lastError: 'Network error' }).then(function() {
-                                            self.pause();
-                                            resolve();
-                                        });
-                                    } else {
-                                        self._handleFailure(entry, err ? err.message || err.toString() : 'Unknown').then(resolve);
-                                    }
-                                })
-                                [entry.action](entry.payload);
-                        });
-                    });
-                },
-
-                _verifyAndRetry: function(entry) {
-                    var self = this;
-                    return new Promise(function(resolve) {
-                        google.script.run
-                            .withSuccessHandler(function(res) {
-                                if (res && res.found !== false && res.success) {
-                                    self.update(entry.txId, { status: 'SYNCED', serverResult: res })
-                                        .then(function() { return self.remove(entry.txId); })
-                                        .then(function() {
-                                            SIGAP.toast('Data tersimpan ✓ (terverifikasi)', 'success', 2500);
-                                            self._onSynced(entry, res);
-                                            resolve();
-                                        });
-                                } else {
-                                    self._handleFailure(entry, 'Timeout').then(resolve);
-                                }
-                            })
-                            .withFailureHandler(function() {
-                                self._handleFailure(entry, 'Verify failed').then(resolve);
-                            })
-                            .verifyTransaction({ txId: entry.txId });
-                    });
-                },
-
-                _handleFailure: function(entry, errorMsg) {
-                    var self = this;
-                    var newCount = (entry.retryCount || 0) + 1;
-                    if (newCount >= SIGAP.config.MAX_RETRIES) {
-                        return self.update(entry.txId, { status: 'FAILED', lastError: errorMsg, retryCount: newCount }).then(function() {
-                            SIGAP.toast('Gagal menyimpan data setelah ' + newCount + ' percobaan', 'error', 5000);
+                    if (sentBefore && age > self.VERIFY_WINDOW_MS) {
+                        return self.update(entry.txId, { status: 'NEEDS_REVIEW', lastError: 'Terlalu lama untuk diverifikasi otomatis' }).then(function() {
+                            self._settleWaiter(entry.txId, { state: 'UNKNOWN', txId: entry.txId });
+                            SIGAP.toast('1 transaksi lama perlu dicek manual di Riwayat', 'warning', 6000);
                         });
                     }
-                    return self.update(entry.txId, { status: 'RETRY', lastError: errorMsg, retryCount: newCount }).then(function() {
-                        var delay = SIGAP.retryDelay(newCount);
-                        setTimeout(function() { self.processQueue(); }, delay);
+
+                    return self.update(entry.txId, { status: 'PROCESSING', attempts: (entry.attempts || 0) + 1 }).then(function() {
+                        return AppApi.transact(entry.action, entry.payload, { verifyFirst: sentBefore });
+                    }).then(function(out) {
+                        if (out.state === 'CONFIRMED') {
+                            return self.remove(entry.txId).then(function() {
+                                var waited = self._settleWaiter(entry.txId, out);
+                                if (!waited) SIGAP.toast(out.verified ? 'Transaksi tertunda tersimpan ✓ (terverifikasi)' : 'Transaksi tertunda tersimpan ✓', 'success', 3000);
+                                self._onSynced(entry, out.result);
+                            });
+                        }
+                        if (out.state === 'REJECTED') {
+                            var res = out.result || {};
+                            if (SIGAP.classifyError(null, res) === 'DUPLICATE') {
+                                return self.remove(entry.txId).then(function() { self._settleWaiter(entry.txId, { state: 'CONFIRMED', result: res, txId: entry.txId }); });
+                            }
+                            // UI yang menunggu masih memegang datanya (keranjang) -> entry dibuang.
+                            // Tanpa UI yang menunggu, entry DISIMPAN sebagai FAILED agar data tidak hilang.
+                            if (self._waiters.has(entry.txId)) {
+                                return self.remove(entry.txId).then(function() { self._settleWaiter(entry.txId, out); });
+                            }
+                            return self.update(entry.txId, { status: 'FAILED', lastError: res.message || 'Ditolak server' }).then(function() {
+                                SIGAP.toast('Transaksi tertunda ditolak server: ' + (res.message || ''), 'error', 6000);
+                            });
+                        }
+                        // UNKNOWN: belum bisa dipastikan -> verifikasi ulang nanti, BUKAN kirim buta.
+                        var rc = (entry.retryCount || 0) + 1;
+                        return self.update(entry.txId, { status: 'VERIFY', retryCount: rc, lastError: out.offline ? 'Offline' : 'Belum terverifikasi' }).then(function() {
+                            self._settleWaiter(entry.txId, out);
+                            if (out.offline) { self.pause(); return; }
+                            if (rc < SIGAP.config.MAX_RETRIES) setTimeout(function() { self.processQueue(); }, SIGAP.retryDelay(rc));
+                        });
+                    }).catch(function(e) {
+                        console.error(e);
+                        return self.update(entry.txId, { status: 'VERIFY', lastError: String(e && e.message || e) }).then(function() {
+                            self._settleWaiter(entry.txId, { state: 'UNKNOWN', txId: entry.txId });
+                        });
                     });
                 },
 
@@ -1952,30 +2587,29 @@
                     }
                 },
 
-                _updateSyncPill: function(entries) {
-                    var pending = entries.filter(function(e) { return e.status === 'PENDING' || e.status === 'PROCESSING' || e.status === 'RETRY'; });
-                    var failed = entries.filter(function(e) { return e.status === 'FAILED'; });
-                    var pill = document.getElementById('sync-pill');
-                    var pillText = document.getElementById('sync-pill-text');
-                    if (!pill || !pillText) return;
+                _refreshPill: function() {
+                    var self = this;
+                    self.getAll().then(function(all) { self._updateSyncPill(all); });
+                },
 
-                    if (pending.length > 0) {
-                        pill.className = 'show syncing';
-                        pill.style.display = 'inline-flex';
-                        pillText.textContent = 'Menyinkronkan… (' + pending.length + ' antrian)';
-                    } else if (failed.length > 0) {
-                        pill.className = 'show warn';
-                        pill.style.display = 'inline-flex';
-                        pillText.textContent = 'Gagal menyimpan ' + failed.length + ' transaksi';
-                    } else if (entries.length === 0) {
-                        // No queue items — leave pill as-is (managed by existing syncBegin/syncEnd)
-                    }
+                _updateSyncPill: function(entries) {
+                    var pending = entries.filter(function(e) { return e.status === 'PENDING' || e.status === 'PROCESSING' || e.status === 'RETRY' || e.status === 'VERIFY'; });
+                    var failed = entries.filter(function(e) { return e.status === 'FAILED' || e.status === 'NEEDS_REVIEW'; });
+                    _txPillInfo = { pending: pending.length, failed: failed.length };
+                    renderSyncPill();
                 },
 
                 // On page load, resume any pending items
                 init: function() {
                     var self = this;
                     self.open().then(function() {
+                        // Entry PROCESSING = tab tertutup di tengah request -> wajib verifikasi dulu.
+                        return self.getAll().then(function(all) {
+                            return Promise.all(all.filter(function(e) { return e.status === 'PROCESSING'; })
+                                .map(function(e) { return self.update(e.txId, { status: 'VERIFY' }); }));
+                        });
+                    }).then(function() {
+                        if (navigator.onLine === false) { self.pause(); self._refreshPill(); return; }
                         self.processQueue();
                     }).catch(function() {
                         // IndexedDB not available, continue without queue persistence
@@ -2062,20 +2696,18 @@
         };
 
         // ---------- CONNECTION MONITOR ----------
+        // navigator.onLine hanya sinyal awal; status sebenarnya mengikuti respons
+        // API (lihat AppApi.onConnection & renderSyncPill).
         window.addEventListener('online', function() {
             SIGAP.txQueue.resume();
             SIGAP.toast('Koneksi kembali', 'info', 2000);
+            renderSyncPill();
         });
         window.addEventListener('offline', function() {
             SIGAP.txQueue.pause();
-            var pill = document.getElementById('sync-pill');
-            var pillText = document.getElementById('sync-pill-text');
-            if (pill && pillText) {
-                pill.className = 'show warn';
-                pill.style.display = 'inline-flex';
-                pillText.textContent = 'Menunggu koneksi…';
-            }
+            renderSyncPill();
         });
+        AppApi.onConnection(function() { renderSyncPill(); });
 
         // Initialize queue on load
         if (typeof document !== 'undefined') {
@@ -2154,6 +2786,16 @@
          */
         function paintRows(tbody, htmlParts) {
             if (!tbody) return;
+            if (SIGAP.perf.enabled) {   // render_start -> render_complete per tabel
+                const mk = 'RENDER_' + tbody.id;
+                SIGAP.perf.mark(mk);
+                _paintRowsImpl(tbody, htmlParts);
+                SIGAP.perf.measure('render ' + tbody.id + ' (' + (htmlParts ? htmlParts.length : 0) + ' parts)', mk);
+                return;
+            }
+            _paintRowsImpl(tbody, htmlParts);
+        }
+        function _paintRowsImpl(tbody, htmlParts) {
             if (!htmlParts || !htmlParts.length) {
                 tbody.innerHTML = '';
                 return;
@@ -2457,37 +3099,31 @@
         function _isStale(key, token) { return _reqToken[key] !== token; }
 
         /**
-         * Satu pintu untuk semua google.script.run.
+         * Satu pintu untuk semua request backend (UI tidak tahu transport-nya).
+         * [UPGRADE] Kini berjalan di atas AppApi.request(): antrian global,
+         * prioritas, dedupe in-flight, timeout per aksi (REQUEST_POLICY),
+         * retry terbatas, dan error model yang sama untuk Apps Script & GitHub.
+         * Kontrak opsi di bawah TIDAK berubah, sehingga seluruh pemanggil lama
+         * tetap bekerja apa adanya.
          *  - Duplicate request dicegah: key yang sedang 'loading' tidak dijalankan lagi.
          *  - opt.replace = true untuk query berparameter (rentang tanggal, periode,
          *    item): request baru TETAP dikirim, respons lama yang keburu datang
-         *    dibuang oleh token guard. Tanpa ini, mengganti filter saat request
-         *    masih berjalan akan membuat UI diam saja.
+         *    dibuang oleh token guard.
          *  - Race condition dicegah: respons dengan token lama diabaikan.
          *  - Loader full-screen HANYA bila opt.blocking === true.
-         *  - opt.onSettled dipanggil TEPAT SEKALI per pemanggilan (termasuk saat
-         *    respons dibuang), sehingga rantai background hydration tidak macet.
+         *  - opt.onSettled dipanggil TEPAT SEKALI per pemanggilan.
+         *  - opt.onUncertain (baru, opsional): dipanggil bila MUTASI gagal di level
+         *    transport sehingga hasilnya tidak pasti -> pemanggil memuat ulang data
+         *    asli dari server, bukan menebak.
          * @return {boolean} true bila request benar-benar dikirim.
          */
         function serverCall(opt) {
             const key = opt.key || null;
             if (key && REQ[key] === 'loading' && !opt.replace) return false;   // dedupe
 
-            // Request Priority: Jika ada P0 (transaksi) aktif dan request ini P2 (background), tunda sejenak
             const priority = (typeof opt.priority === 'number') ? opt.priority : 1;
-            if (typeof SIGAP !== 'undefined' && SIGAP._p0Active > 0 && priority >= 2) {
-                setTimeout(() => serverCall(opt), 150);
-                return true;
-            }
-            if (priority === 0 && typeof SIGAP !== 'undefined') {
-                SIGAP._p0Active = (SIGAP._p0Active || 0) + 1;
-            }
-
             const token = key ? _nextToken(key) : 0;
             if (key) REQ[key] = 'loading';
-
-            const perfMark = 'REQ_' + opt.fn + '_' + Math.floor(Math.random()*100000);
-            if (typeof SIGAP !== 'undefined') SIGAP.perf.mark(perfMark);
 
             const blocking = !!opt.blocking;
             const quiet    = !!opt.quiet;                       // tanpa indikator sama sekali
@@ -2495,49 +3131,38 @@
             else if (!quiet) syncBegin();
 
             const finish = (ok) => {
-                if (priority === 0 && typeof SIGAP !== 'undefined') {
-                    SIGAP._p0Active = Math.max(0, (SIGAP._p0Active || 1) - 1);
-                }
-                if (typeof SIGAP !== 'undefined') SIGAP.perf.measure(opt.fn, perfMark);
                 if (blocking) showLoader(false);
                 else if (!quiet) syncEnd(ok);
             };
-
             const settle = (ok) => { if (opt.onSettled) { try { opt.onSettled(ok); } catch (e) { console.error(e); } } };
 
-            const runner = google.script.run
-                .withSuccessHandler(res => {
-                    const ok = !!(res && res.success);
-                    finish(ok);
-                    if (key && _isStale(key, token)) { settle(ok); return; }   // respons usang -> abaikan hasilnya
-                    if (key) REQ[key] = ok ? 'ready' : 'error';
-                    try {
-                        if (ok) { if (opt.onSuccess) opt.onSuccess(res); }
-                        else {
-                            const errType = (typeof SIGAP !== 'undefined') ? SIGAP.classifyError(null, res) : 'SERVER_ERROR';
-                            const msg = (res && res.message) || ((typeof SIGAP !== 'undefined') ? SIGAP.errorMessage(errType) : 'Terjadi kesalahan pada server.');
-                            if (opt.onError) opt.onError(msg);
-                            else if (opt.alertOnError) showAlert('Gagal', msg, 'error');
-                        }
-                    } catch (e) { console.error(e); }
-                    settle(ok);
-                })
-                .withFailureHandler(err => {
-                    finish(false);
-                    if (key && _isStale(key, token)) { settle(false); return; }
-                    if (key) REQ[key] = 'error';
-                    const errType = (typeof SIGAP !== 'undefined') ? SIGAP.classifyError(err, null) : 'UNKNOWN';
-                    const errMsg = (typeof SIGAP !== 'undefined' && errType === 'NETWORK_ERROR')
-                        ? SIGAP.errorMessage('NETWORK_ERROR')
-                        : (err && (err.message || err.toString())) || 'Koneksi server gagal.';
-                    try {
-                        if (opt.onError) opt.onError(errMsg);
-                        else if (opt.alertOnError) showAlert('Error', errMsg, 'error');
-                    } catch (e) { console.error(e); }
-                    settle(false);
-                });
-
-            runner[opt.fn].apply(runner, opt.args || []);
+            AppApi.request(opt.fn, opt.args || [], { priority: priority }).then(res => {
+                const ok = !!(res && res.success);
+                finish(ok);
+                if (key && _isStale(key, token)) { settle(ok); return; }   // respons usang -> abaikan hasilnya
+                if (key) REQ[key] = ok ? 'ready' : 'error';
+                try {
+                    if (ok) { if (opt.onSuccess) opt.onSuccess(res); }
+                    else {
+                        const errType = SIGAP.classifyError(null, res);
+                        const msg = (res && res.message) || SIGAP.errorMessage(errType);
+                        if (opt.onError) opt.onError(msg);
+                        else if (opt.alertOnError) showAlert('Gagal', msg, 'error');
+                    }
+                } catch (e) { console.error(e); }
+                settle(ok);
+            }, err => {
+                finish(false);
+                if (key && _isStale(key, token)) { settle(false); return; }
+                if (key) REQ[key] = 'error';
+                const errMsg = (err && (err.userMessage || err.message)) || 'Koneksi server gagal.';
+                try {
+                    if (err && err.type === 'UNCERTAIN' && opt.onUncertain) opt.onUncertain();
+                    if (opt.onError) opt.onError(errMsg);
+                    else if (opt.alertOnError) showAlert(err && err.type === 'UNCERTAIN' ? 'Perlu Dipastikan' : 'Koneksi Bermasalah', errMsg, 'warning');
+                } catch (e) { console.error(e); }
+                settle(false);
+            });
             return true;
         }
 
@@ -2550,26 +3175,51 @@
             if (!ok) _syncFailed = true;
             renderSyncPill();
         }
+        // [UPGRADE] Empat state yang konsisten di kedua environment:
+        //   OFFLINE  : perangkat offline ATAU >= 2 kegagalan jaringan berturut-turut
+        //   SYNCING  : ada request berjalan / transaksi di antrian sedang dipastikan
+        //   WARNING  : sebagian request gagal / ada transaksi yang perlu dicek
+        //   SYNCED   : semua data terbaru (hilang sendiri setelah 2,5 dtk)
+        let _txPillInfo = { pending: 0, failed: 0 };
         function renderSyncPill() {
             const pill = document.getElementById('sync-pill');
             const txt  = document.getElementById('sync-pill-text');
             if (!pill || !txt) return;
             clearTimeout(_syncHideTimer);
-            pill.classList.add('show');
+            pill.style.display = '';
+            const c = AppApi.connection;
+            const offline = (navigator.onLine === false) || (c && c.netFailStreak >= 2);
 
-            if (_syncActive > 0) {
+            if (offline) {
+                pill.className = 'show offline';
+                txt.textContent = _txPillInfo.pending
+                    ? `Offline · ${_txPillInfo.pending} transaksi menunggu`
+                    : (navigator.onLine === false ? 'Offline' : 'Koneksi bermasalah · mencoba lagi');
+                pill.dataset.state = 'OFFLINE';
+                return;
+            }
+            if (_syncActive > 0 || _txPillInfo.pending > 0) {
                 pill.className = 'show syncing';
-                txt.textContent = 'Menyinkronkan…';
+                txt.textContent = _txPillInfo.pending ? `Memastikan ${_txPillInfo.pending} transaksi…` : 'Menyinkronkan…';
+                pill.dataset.state = 'SYNCING';
+                return;
+            }
+            if (_txPillInfo.failed > 0) {
+                pill.className = 'show warn';
+                txt.textContent = `${_txPillInfo.failed} transaksi perlu dicek`;
+                pill.dataset.state = 'WARNING';
                 return;
             }
             if (_syncFailed) {
                 pill.className = 'show warn';
                 txt.textContent = 'Sebagian data gagal dimuat';
+                pill.dataset.state = 'WARNING';
                 _syncHideTimer = setTimeout(() => { _syncFailed = false; pill.classList.remove('show'); }, 6000);
                 return;
             }
             pill.className = 'show ok';
             txt.textContent = 'Data terbaru';
+            pill.dataset.state = 'SYNCED';
             _syncHideTimer = setTimeout(() => pill.classList.remove('show'), 2500);
         }
 
@@ -2662,9 +3312,9 @@
             if (!p) return '';
             const diffDays = Math.ceil((p.dayTs - todayJakartaStart()) / 86400000);
 
-            if (diffDays < 0)  return 'color:var(--red);font-weight:700;background:var(--red-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(220,38,38,0.2);display:inline-block;font-size:0.75rem;';
-            if (diffDays <= 7) return 'color:var(--amber);font-weight:700;background:var(--amber-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(180,83,9,0.2);display:inline-block;font-size:0.75rem;';
-            return 'color:var(--green);font-weight:700;background:var(--green-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(21,128,61,0.2);display:inline-block;font-size:0.75rem;';
+            if (diffDays < 0)  return 'color:var(--red);font-weight:700;background:var(--red-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(220,38,38,0.2);display:inline-block;font-size:var(--fs-xs);';
+            if (diffDays <= 7) return 'color:var(--amber);font-weight:700;background:var(--amber-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(180,83,9,0.2);display:inline-block;font-size:var(--fs-xs);';
+            return 'color:var(--green);font-weight:700;background:var(--green-soft);padding:4px 10px;border-radius:99px;border:1px solid rgba(21,128,61,0.2);display:inline-block;font-size:var(--fs-xs);';
         }
 
         // AUDIT: konstanta di bawah dulu dibuat ULANG di dalam isItemActive()
@@ -2726,6 +3376,13 @@
             renderUiShell();      // 1. shell + tanggal, langsung bisa dilihat user
             hydrateFromCache();   // 2. isi dari cache -> layar langsung terpakai
             startCriticalPath();  // 3. revalidasi ke server (menimpa cache)
+            // 4. [UPGRADE] kembali ke tab terakhir; datanya dimuat on-demand
+            //    oleh switchTab() seperti biasa (tidak memblokir jalur kritis).
+            try {
+                const lastTab = localStorage.getItem('tcg-inv:ui:tab');
+                if (lastTab && lastTab !== 'tab-keluar' && document.getElementById(lastTab) && document.getElementById('btn-' + lastTab)) switchTab(lastTab);
+            } catch (e) {}
+            if (typeof SIGAP !== 'undefined') SIGAP.perf.measure('DOMContentLoaded → shell siap (transport: ' + APP_ENV.transport + ')', 'APP_BOOT_START');
         });
 
         function renderUiShell() {
@@ -2779,16 +3436,18 @@
          * menghentikan langkah lain dan TIDAK merusak modul Input Keluar.
          */
         function runBackgroundHydration() {
+            // [UPGRADE · SMART LOADING] Setelah jalur kritis, yang dimuat di latar
+            // hanya data KECIL atau yang dibutuhkan header (lonceng exp). Histori
+            // PENUH (keluar, masuk, kartu stock YTD, laporan opname) — payload
+            // terbesar dan pembacaan sheet terberat — kini dimuat ON-DEMAND:
+            // saat tab-nya dibuka, saat filter dimundurkan ke luar bulan berjalan,
+            // atau saat user menunjukkan niat membuka tab (hover / sentuh tombol tab).
             const steps = [
                 (next) => loadCurrentInbound({ onSettled: next }),                 // 4. inbound bulan berjalan
                 (next) => loadCurrentStock({ force: true, onSettled: next }),      // revalidate (stale-while-revalidate)
-                (next) => loadOutboundData({ background: true, onSettled: next }), // 5. full outbound
-                (next) => loadInboundData({ background: true, onSettled: next }),  // 6. full inbound
-                (next) => loadFullStock({ background: true, onSettled: next }),    // 7. full stock (YTD)
-                (next) => loadExpData(null, { background: true, onSettled: next }),// 8. dataset exp monitor (lonceng alert)
-                (next) => loadOpnamePeriods({ onSettled: next }),                  // 9. periode opname
-                (next) => checkOpnameDraft({ onSettled: next }),                   // draft opname (kecil)
-                (next) => loadOpnameReport({ background: true, onSettled: next })  // 10. laporan opname
+                (next) => loadExpData(null, { background: true, onSettled: next }),// 5. dataset exp monitor (lonceng alert)
+                (next) => checkOpnameDraft({ onSettled: next }),                   // 6. draft opname (kecil)
+                (next) => loadOpnamePeriods({ onSettled: next })                   // 7. periode opname (kecil)
             ];
 
             let i = 0;
@@ -2808,12 +3467,19 @@
 
         // ===================== UI HELPERS =====================
 
-        function showLoader(show) {
-            document.getElementById('loader').classList.toggle('show', show);
+        function showLoader(show, text) {
+            const el = document.getElementById('loader');
+            el.classList.toggle('show', show);
+            const t = document.getElementById('loader-text');
+            if (t) t.textContent = (show && text) ? text : 'Memproses...';
         }
 
         function showAlert(title, text, icon) {
-            Swal.fire({ title, text, icon, confirmButtonColor: 'var(--accent)', background: 'var(--surface)', color: 'var(--text)' });
+            // Pesan multi-baris (mis. verifikasi transaksi) dirender sebagai baris
+            // terpisah; teks tetap di-escape.
+            const multi = typeof text === 'string' && text.indexOf('\n') > -1;
+            Swal.fire(Object.assign({ title, icon, confirmButtonColor: 'var(--accent)', background: 'var(--surface)', color: 'var(--text)' },
+                multi ? { html: esc(text).replace(/\n/g, '<br>') } : { text }));
         }
 
         /** Sudah ada data / sedang jalan / sudah pernah sukses? -> jangan request lagi. */
@@ -2828,21 +3494,29 @@
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
-            document.getElementById('btn-' + tabId).classList.add('active');
+            const tabBtn = document.getElementById('btn-' + tabId);
+            tabBtn.classList.add('active');
+            // [UPGRADE · MOBILE] tab aktif selalu terlihat di navigasi geser.
+            try { tabBtn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+            // Preferensi UI saja (bukan data) — aman di localStorage.
+            try { localStorage.setItem('tcg-inv:ui:tab', tabId); } catch (e) {}
 
             // Selalu render dari data yang SUDAH ada dulu (instan), request hanya
             // dilakukan bila memang belum ada data dan tidak ada request berjalan.
             if (tabId === 'tab-masuk') {
                 if (globalInboundData.length) applyFilterInbound();
                 if (!globalInboundData.length && _needsFetch(['inboundCurrent', 'inboundFull'])) loadCurrentInbound();
+                prefetchTab('tab-masuk');       // histori penuh menyusul di latar
             }
             if (tabId === 'tab-riwayat-keluar') {
                 if (globalOutboundData.length) applyFilterOutbound();
                 if (!globalOutboundData.length && _needsFetch(['outboundCurrent', 'outboundFull'])) loadCurrentOutbound();
+                prefetchTab('tab-riwayat-keluar');
             }
             if (tabId === 'tab-stock') {
                 if (globalStockData.length) renderFilteredStock();
                 if (!globalStockData.length && _needsFetch(['stockCurrent', 'stockFull'])) loadCurrentStock();
+                prefetchTab('tab-stock');
             }
             if (tabId === 'tab-exp') {
                 // Kerangka (kalender / tabel) selalu digambar lebih dulu supaya
@@ -2865,13 +3539,52 @@
             }
         }
 
+        /**
+         * [UPGRADE · PREFETCH] Muat data penuh sebuah tab di latar (prioritas 2,
+         * tidak memblokir UI, dedupe lewat state REQ). Dipanggil saat tab dibuka
+         * dan saat user menunjukkan niat (pointer masuk / sentuhan pada tombol tab).
+         */
+        function prefetchTab(tabId) {
+            if (tabId === 'tab-riwayat-keluar' && REQ.outboundFull === 'idle') loadOutboundData({ background: true });
+            if (tabId === 'tab-masuk' && REQ.inboundFull === 'idle') loadInboundData({ background: true });
+            if (tabId === 'tab-stock' && REQ.stockFull === 'idle') loadFullStock({ background: true });
+            if (tabId === 'tab-laporan' && REQ.opnameReport === 'idle' && !globalOpnameReport.length) loadOpnameReport({ background: true });
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            const nav = document.querySelector('.tab-nav');
+            if (!nav) return;
+            const intent = e => {
+                const b = e.target.closest && e.target.closest('.tab-btn');
+                if (b && b.id && b.id.indexOf('btn-') === 0) prefetchTab(b.id.slice(4));
+            };
+            nav.addEventListener('pointerover', intent, { passive: true });
+            nav.addEventListener('touchstart', intent, { passive: true });
+        });
+
+        /** Awal bulan berjalan (Jakarta) sebagai timestamp awal hari. */
+        function _currentMonthStartTs() {
+            const j = getJakartaDate();
+            return new Date(j.getFullYear(), j.getMonth(), 1).getTime();
+        }
+
         function toggleGroup(cls, iconId) {
-            const rows = document.querySelectorAll('.' + cls);
             const icon = document.getElementById(iconId);
+            const hdr = document.querySelector(`tr[data-grp="${cls}"]`);
+            const lazy = _lazyGroups.get(cls);
+            if (lazy && !lazy.done) {
+                // Pertama kali dibuka: bangun isi grup sekarang (satu kali parse).
+                lazy.done = true;
+                if (hdr) hdr.insertAdjacentHTML('afterend', lazy.rows.map(r => _groupRowHtml(r, lazy.type, cls)).join(''));
+                if (icon) icon.style.transform = 'rotate(0deg)';
+                if (hdr) { const b = hdr.querySelector('.group-hdr-inner'); if (b) b.setAttribute('aria-expanded', 'true'); }
+                return;
+            }
+            const rows = document.querySelectorAll('.' + cls);
             let anyHidden = false;
             rows.forEach(r => { if (r.classList.contains('hidden')) anyHidden = true; });
             rows.forEach(r => anyHidden ? r.classList.remove('hidden') : r.classList.add('hidden'));
             if (icon) icon.style.transform = anyHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+            if (hdr) { const b = hdr.querySelector('.group-hdr-inner'); if (b) b.setAttribute('aria-expanded', anyHidden ? 'true' : 'false'); }
         }
 
         // ===================== MASTER DATA =====================
@@ -3028,6 +3741,7 @@
                 key: 'stockFull',
                 fn: 'getStockCardData',
                 args: [startDate, endDate],
+                priority: opt.background ? 2 : 1,
                 replace: !!opt.userInitiated,   // ganti rentang tanggal saat loading tetap dilayani
                 onSuccess: res => {
                     globalStockData = normalizeStockRows(res.data);
@@ -3050,7 +3764,7 @@
             if (started) {
                 const tbody = document.getElementById('stock-tbody');
                 if (tbody && !globalStockData.length) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Memuat kartu stock…</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:var(--fs-body);">Memuat kartu stock…</td></tr>';
                 }
             }
             return started;
@@ -3089,6 +3803,9 @@
         }
 
         function addItemToCart() {
+            // Keranjang dibekukan selama transaksi dikirim/diverifikasi, supaya isi
+            // yang dikonfirmasi server = isi yang dikirim.
+            if (_outboundSubmitting) return SIGAP.toast('Tunggu, transaksi sebelumnya sedang disimpan…', 'info', 2000);
             const namaItem = document.getElementById('out-item').value;
             const altUom   = document.getElementById('out-altuom').value;
             const uom      = document.getElementById('out-uom').value;
@@ -3110,7 +3827,10 @@
             renderCart();
         }
 
-        function removeCartItem(index) { cartItems.splice(index, 1); renderCart(); }
+        function removeCartItem(index) {
+            if (_outboundSubmitting) return SIGAP.toast('Tunggu, transaksi sebelumnya sedang disimpan…', 'info', 2000);
+            cartItems.splice(index, 1); renderCart();
+        }
 
         function renderCart() {
             const tbody   = document.getElementById('cart-tbody');
@@ -3121,12 +3841,12 @@
             tbody.innerHTML   = '';
 
             if (!cartItems.length) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Belum ada item ditambahkan</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-dim); font-size:var(--fs-body);">Belum ada item ditambahkan</td></tr>';
                 btnSave.disabled = true;
                 return;
             }
 
-            btnSave.disabled = false;
+            btnSave.disabled = _outboundSubmitting;   // tetap terkunci selama transaksi berjalan
             const html = [];   // BOOSTER: satu kali parse HTML
             cartItems.forEach((item, idx) => {
                 // idx adalah angka yang kita hasilkan sendiri -> aman apa adanya.
@@ -3134,9 +3854,9 @@
                 html.push(
                     `<tr>`,
                     `<td style="font-weight:700; color:var(--text);">${esc(stripCode(item.namaItem))}</td>`,
-                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(item.altUom)}</td>`,
-                    `<td style="text-align:right; font-weight:800; color:var(--red); font-size:0.95rem;">${esc(item.qty)}</td>`,
-                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(item.uom)}</td>`,
+                    `<td style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${esc(item.altUom)}</td>`,
+                    `<td style="text-align:right; font-weight:800; color:var(--red); font-size:var(--fs-lead);">${esc(item.qty)}</td>`,
+                    `<td style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${esc(item.uom)}</td>`,
                     `<td style="text-align:center;">`,
                     `<button onclick="removeCartItem(${idx})" style="background:var(--red-soft); border:1px solid rgba(220,38,38,0.25); color:var(--red); border-radius:8px; padding:6px 9px; cursor:pointer;" title="Hapus">`,
                     `<i class="ph ph-trash" style="font-size:1.05rem;"></i></button></td>`,
@@ -3146,7 +3866,29 @@
             paintRows(tbody, html);
         }
 
+        /**
+         * [UPGRADE · TRANSACTION FLOW]
+         *   SUBMIT -> TX ID -> KUNCI TOMBOL -> SIMPAN KE ANTRIAN (IndexedDB) -> KIRIM
+         *     -> timeout / putus? -> VERIFIKASI (found -> sukses | belum -> kirim ulang tx ID sama)
+         * "Tersimpan" HANYA ditampilkan setelah backend benar-benar mengonfirmasi.
+         * Versi lama langsung mengosongkan keranjang + toast "Disimpan ke antrian"
+         * sebelum server menjawab.
+         */
+        let _outboundSubmitting = false;
+
+        function setSaveOutboundBusy(busy, label) {
+            const btn = document.getElementById('btn-save-outbound');
+            if (!btn) return;
+            if (!btn.dataset.label) btn.dataset.label = btn.innerHTML;
+            btn.disabled = !!busy || !cartItems.length;
+            btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+            btn.innerHTML = busy
+                ? `<i class="ph ph-circle-notch" style="font-size:1.2rem; animation:spin 1s linear infinite;"></i> ${esc(label || 'Menyimpan…')}`
+                : btn.dataset.label;
+        }
+
         function saveOutbound() {
+            if (_outboundSubmitting) return;   // anti double-submit
             const tanggal = document.getElementById('out-tanggal').value;
             if (!tanggal)          return showAlert('Perhatian', 'Tanggal Transaksi harus diisi!', 'warning');
             if (!cartItems.length) return;
@@ -3159,32 +3901,49 @@
                 confirmButtonText: 'Ya, Simpan', cancelButtonText: 'Batal',
                 background: 'var(--surface)', color: 'var(--text)'
             }).then(result => {
-                if (!result.isConfirmed) return;
+                if (!result.isConfirmed || _outboundSubmitting) return;
 
-                const payload = { tanggal, items: cartItems };
+                // Salinan data: keranjang boleh berubah, payload transaksi tidak.
+                const payload = { tanggal, items: cartItems.map(it => ({ namaItem: it.namaItem, altUom: it.altUom, uom: it.uom, qty: it.qty })) };
+                payload._idempotencyKey = AppApi.newTxId();
 
-                if (typeof SIGAP !== 'undefined' && SIGAP.txQueue) {
-                    SIGAP.txQueue.enqueue('saveOutboundData', payload);
-                    cartItems = []; renderCart();
-                    SIGAP.toast('Disimpan ke antrian...', 'info', 2000);
-                    SIGAP.txQueue.processQueue();
-                    return;
-                }
+                _outboundSubmitting = true;
+                setSaveOutboundBusy(true, 'Menyimpan…');
 
-                // Optimistic UI for fallback
-                cartItems = []; renderCart();
-                if (typeof SIGAP !== 'undefined') SIGAP.toast('Menyimpan data...', 'info', 2000);
+                const submit = (SIGAP.txQueue && SIGAP.txQueue.submit)
+                    ? SIGAP.txQueue.submit('saveOutboundData', payload)
+                    : AppApi.transact('saveOutboundData', payload);
 
-                serverCall({
-                    fn: 'saveOutboundData',
-                    args: [payload],
-                    quiet: true,
-                    alertOnError: true,
-                    onSuccess: res => {
-                        if (typeof SIGAP !== 'undefined') SIGAP.toast('Tersimpan!', 'success');
-                        invalidateOutboundClient();      // SCOPED: outbound + stock saja
-                        silentlyLoadStockBalances();     // saldo langsung disegarkan
+                submit.then(out => {
+                    _outboundSubmitting = false;
+                    if (out.state === 'CONFIRMED') {
+                        cartItems = []; renderCart();
+                        setSaveOutboundBusy(false);
+                        SIGAP.toast(out.verified ? 'Tersimpan ✓ (terverifikasi setelah koneksi pulih)' : 'Tersimpan ✓', 'success', 2600);
+                        if (!(SIGAP.txQueue && SIGAP.txQueue.submit)) { invalidateOutboundClient(); silentlyLoadStockBalances(); }
+                        return;
                     }
+                    if (out.state === 'REJECTED') {
+                        // Pasti TIDAK tersimpan -> keranjang dipertahankan agar bisa diperbaiki.
+                        setSaveOutboundBusy(false);
+                        showAlert('Gagal Menyimpan', (out.result && out.result.message) || 'Server menolak transaksi.', 'error');
+                        return;
+                    }
+                    // UNKNOWN / QUEUED_OFFLINE: transaksi dipegang antrian perangkat ini dan
+                    // akan dipastikan otomatis. Keranjang dikosongkan supaya TIDAK dikirim dua kali.
+                    cartItems = []; renderCart();
+                    setSaveOutboundBusy(false);
+                    if (out.state === 'QUEUED_OFFLINE' || out.offline) {
+                        showAlert('Perangkat Offline',
+                            'Transaksi disimpan di antrian perangkat ini dan akan dikirim otomatis saat koneksi kembali.\nJangan input ulang transaksi yang sama.', 'info');
+                    } else {
+                        showAlert('Koneksi Terputus', AppApi.messages.TX_VERIFY, 'warning');
+                    }
+                }).catch(err => {
+                    _outboundSubmitting = false;
+                    setSaveOutboundBusy(false);
+                    console.error(err);
+                    showAlert('Perlu Dipastikan', AppApi.messages.TX_VERIFY, 'warning');
                 });
             });
         }
@@ -3260,6 +4019,66 @@
             return out;
         }
 
+        /**
+         * [UPGRADE · DOM PERFORMANCE] GRUP TANGGAL DIRENDER LAZY.
+         * Semua grup tampil TERTUTUP (perilaku lama). Dulu seluruh baris tetap
+         * dibuat di DOM dengan class `hidden` — 10.000 transaksi = 10.000 <tr>
+         * (±80.000 sel) yang di-parse & disimpan walau tidak terlihat. Sekarang
+         * yang dibuat hanya BARIS JUDUL grup; isi grup dibuat saat grup pertama
+         * kali dibuka (toggleGroup), setelah itu buka/tutup memakai class
+         * `hidden` seperti biasa. Pengelompokan, urutan, filter, dan aksi baris
+         * tidak berubah.
+         */
+        const _lazyGroups = new Map();   // 'grp-<type>-<id>' -> { rows, type, done }
+
+        function _groupRowHtml(row, type, rowCls) {
+            const isOut = type === 'outbound';
+            const isIn  = type === 'inbound';
+            const adjBadge = isAdjRow(row) ? ` <span class="badge badge-adj" style="padding:1px 7px;">ADJ</span>` : '';
+            // Qty yang tidak terbaca sebagai angka ditandai '—', BUKAN 0.00.
+            const qtyNum = parseFloat(row.qty);
+            const qtyBad = isNaN(qtyNum);
+            const qtyTxt = qtyBad
+                ? '—'
+                : `${qtyNum > 0 ? (isOut ? '-' : '+') : ''}${qtyNum.toFixed(2)}`;
+            const qtyColor = qtyBad ? 'var(--text-dim)' : (isOut ? 'var(--red)' : 'var(--green)');
+            const qtyTd = `<td class="td-num" style="color:${qtyColor};">${qtyTxt}</td>`;
+
+            let actionTd = '';
+            if (isOut) {
+                const idParam = Array.isArray(row.ids) ? escAttr(JSON.stringify(row.ids)) : escAttr(row.id);
+                actionTd = `<td style="text-align:center;"><button class="btn-row" aria-label="Edit" onclick="editOutboundItem('${idParam}','${escAttr(row.tanggalEdit)}','${escAttr(row.qty)}')">` +
+                    `<i class="ph ph-pencil-simple"></i></button></td>`;
+            } else if (isIn) {
+                actionTd = `<td style="text-align:center;"><button class="btn-row" aria-label="Edit Exp Date" onclick="editInboundExpDate('${escAttr(row.id)}','${escAttr(row.expDate || '')}')">` +
+                    `<i class="ph ph-calendar-plus"></i></button></td>`;
+            }
+
+            if (isIn) {
+                const rawExp     = row.expDate || row.exp_date || row.expired || row.ket || row.keterangan || '';
+                const expDateVal = formatExpDate(rawExp);
+                const expStyle   = getExpDateStyle(rawExp);
+                return `<tr class="${rowCls}">` +
+                    `<td class="td-meta">${esc(row.tanggal)}</td>` +
+                    `<td class="mono">${esc(row.id || '—')}</td>` +
+                    `<td class="td-name">${esc(_rowLabel(row))}${adjBadge}</td>` +
+                    `<td><span style="${expStyle}">${esc(expDateVal)}</span></td>` +
+                    `<td class="td-meta">${esc(row.altUom)}</td>` +
+                    qtyTd +
+                    `<td class="td-meta">${esc(row.uom)}</td>` +
+                    actionTd +
+                    `</tr>`;
+            }
+            return `<tr class="${rowCls}">` +
+                `<td class="td-meta">${esc(row.tanggal)}</td>` +
+                `<td class="td-name">${esc(_rowLabel(row))}${adjBadge}</td>` +
+                `<td class="td-meta">${esc(row.altUom)}</td>` +
+                qtyTd +
+                `<td class="td-meta">${esc(row.uom)}</td>` +
+                actionTd +
+                `</tr>`;
+        }
+
         function renderGroupedTable(data, tbodyId, type) {
             const tbody = document.getElementById(tbodyId);
 
@@ -3267,8 +4086,12 @@
             const isIn  = type === 'inbound';
             const cols = isOut ? 6 : (isIn ? 8 : 6);
 
+            // Grup lama milik tabel ini dilepas (tidak ada kebocoran memori).
+            const prefix = `grp-${type}-`;
+            for (const k of Array.from(_lazyGroups.keys())) if (k.indexOf(prefix) === 0) _lazyGroups.delete(k);
+
             if (!data.length) {
-                tbody.innerHTML = `<tr><td colspan="${cols}" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Tidak ada data.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${cols}" class="td-empty">Tidak ada data.</td></tr>`;
                 return;
             }
 
@@ -3277,87 +4100,34 @@
                 return _rowKey(a).localeCompare(_rowKey(b));   // BOOSTER: tanpa stripCode berulang
             });
 
-            let currentGroup = '', groupId = 0;
-            // BOOSTER: satu array string -> satu kali parse HTML untuk seluruh
-            // tabel. Sebelumnya tiap baris memanggil parser HTML sendiri lewat
-            // tr.innerHTML, jadi 500 baris = 500 kali parse.
+            let currentGroup = '', groupId = 0, bucket = null;
             const html = [];
 
             for (let i = 0; i < data.length; i++) {
                 const row = data[i];
-
                 if (row.tanggalGroup !== currentGroup) {
                     currentGroup = row.tanggalGroup; groupId++;
+                    const cls = `grp-${type}-${groupId}`;
+                    bucket = { rows: [], type: type, done: false };
+                    _lazyGroups.set(cls, bucket);
                     html.push(
-                        `<tr class="group-hdr"><td colspan="${cols}"><div class="group-hdr-inner" onclick="toggleGroup('grp-${type}-${groupId}','icon-${type}-${groupId}')">`,
-                        `<span style="font-size:0.825rem; font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px;">`,
-                        `<i class="ph ph-calendar-blank" style="font-size:1.15rem;"></i> ${esc(currentGroup)}</span>`,
-                        `<i id="icon-${type}-${groupId}" class="ph ph-caret-down" style="color:var(--text-dim); font-size:1.1rem; transition:transform 0.25s;"></i>`,
+                        `<tr class="group-hdr" data-grp="${cls}"><td colspan="${cols}"><div class="group-hdr-inner" role="button" tabindex="0" aria-expanded="false" onclick="toggleGroup('${cls}','icon-${type}-${groupId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">`,
+                        `<span class="group-hdr-title">`,
+                        `<i class="ph ph-calendar-blank"></i> ${esc(currentGroup)}</span>`,
+                        `<span class="group-hdr-meta"><span class="group-hdr-count" id="cnt-${cls}"></span>`,
+                        `<i id="icon-${type}-${groupId}" class="ph ph-caret-down group-hdr-caret"></i></span>`,
                         `</div></td></tr>`
                     );
                 }
-
-                const adjBadge = isAdjRow(row) ? ` <span class="badge badge-adj" style="padding:1px 7px;">ADJ</span>` : '';
-                // Qty yang tidak terbaca sebagai angka ditandai '—', BUKAN 0.00.
-                // Pada aplikasi inventory, 0.00 palsu terlihat seperti angka sah
-                // dan bisa ikut dipakai mengambil keputusan stock; '—' langsung
-                // terbaca sebagai "nilai tidak valid".
-                const qtyNum = parseFloat(row.qty);
-                const qtyBad = isNaN(qtyNum);
-                const qtyTxt = qtyBad
-                    ? '—'
-                    : `${qtyNum > 0 ? (isOut ? '-' : '+') : ''}${qtyNum.toFixed(2)}`;
-                const qtyColor = qtyBad ? 'var(--text-dim)' : (isOut ? 'var(--red)' : 'var(--green)');
-                const qtyTd = `<td style="text-align:right; font-weight:800; color:${qtyColor}; font-size:0.925rem;">${qtyTxt}</td>`;
-
-                let actionTd = '';
-                if (isOut) {
-                    // ids bisa berupa array (baris hasil penggabungan). JSON-nya
-                    // dilewatkan sebagai argumen string, jadi harus lolos dua
-                    // lapisan escape yang sama seperti nilai lain.
-                    const idParam = Array.isArray(row.ids) ? escAttr(JSON.stringify(row.ids)) : escAttr(row.id);
-                    actionTd = `<td style="text-align:center;"><button onclick="editOutboundItem('${idParam}','${escAttr(row.tanggalEdit)}','${escAttr(row.qty)}')"` +
-                        ` style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 9px; cursor:pointer;">` +
-                        `<i class="ph ph-pencil-simple" style="font-size:1.05rem;"></i></button></td>`;
-                } else if (isIn) {
-                    actionTd = `<td style="text-align:center;"><button onclick="editInboundExpDate('${escAttr(row.id)}','${escAttr(row.expDate || '')}')"` +
-                        ` style="background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 9px; cursor:pointer;">` +
-                        `<i class="ph ph-calendar-plus" style="font-size:1.05rem;"></i></button></td>`;
-                }
-
-                const rowCls = `grp-${type}-${groupId} hidden`;
-
-                if (isIn) {
-                    const rawExp     = row.expDate || row.exp_date || row.expired || row.ket || row.keterangan || '';
-                    const expDateVal = formatExpDate(rawExp);
-                    const expStyle   = getExpDateStyle(rawExp);
-                    html.push(
-                        `<tr class="${rowCls}">`,
-                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.tanggal)}</td>`,
-                        `<td class="mono">${esc(row.id || '—')}</td>`,
-                        `<td style="font-weight:700; color:var(--text);">${esc(_rowLabel(row))}${adjBadge}</td>`,
-                        `<td><span style="${expStyle}">${esc(expDateVal)}</span></td>`,
-                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.altUom)}</td>`,
-                        qtyTd,
-                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.uom)}</td>`,
-                        actionTd,
-                        `</tr>`
-                    );
-                } else {
-                    html.push(
-                        `<tr class="${rowCls}">`,
-                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.tanggal)}</td>`,
-                        `<td style="font-weight:700; color:var(--text);">${esc(_rowLabel(row))}${adjBadge}</td>`,
-                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.altUom)}</td>`,
-                        qtyTd,
-                        `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.uom)}</td>`,
-                        actionTd,
-                        `</tr>`
-                    );
-                }
+                bucket.rows.push(row);
             }
-
             paintRows(tbody, html);
+            // Jumlah baris per grup (info ringan, membantu di layar kecil).
+            for (const [cls, g] of _lazyGroups) {
+                if (cls.indexOf(prefix) !== 0) continue;
+                const el = document.getElementById('cnt-' + cls);
+                if (el) el.textContent = g.rows.length + ' baris';
+            }
         }
 
         // ===================== DATA MASUK =====================
@@ -3405,6 +4175,9 @@
                 row._day >= start && row._day <= end && row._search.includes(keyword)
             );
             renderGroupedTable(filtered, 'inbound-tbody', 'inbound');
+            // Filter mundur ke luar bulan berjalan -> histori penuh dimuat on-demand
+            // (onSuccess-nya menerapkan ulang filter ini).
+            if (start < _currentMonthStartTs() && REQ.inboundFull === 'idle') loadInboundData({ background: true });
         }
 
         function editInboundExpDate(id, currentExpDate) {
@@ -3422,7 +4195,7 @@
             Swal.fire({
                 title: 'Edit Expired Date',
                 html: `<div style="text-align:left; margin-bottom:12px;">
-                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Tanggal Expire Baru</label>
+                    <label style="font-size:var(--fs-sm); font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Tanggal Expire Baru</label>
                     <input type="date" id="swal-input-exp" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${defaultDate}">
                 </div>`,
                 showCancelButton: true, confirmButtonText: 'Simpan', cancelButtonText: 'Batal',
@@ -3437,6 +4210,7 @@
                     args: [result.value],
                     blocking: true,
                     alertOnError: true,
+                    onUncertain: () => { invalidateInboundClient(); loadInboundData(); },
                     onSuccess: res => {
                         Swal.fire({ title: 'Berhasil!', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
                         // SCOPED: Exp Date tidak mengubah QTY -> stock tidak perlu dimuat ulang.
@@ -3494,6 +4268,7 @@
             );
 
             renderGroupedTable(filtered, 'outbound-tbody', 'outbound');
+            if (start < _currentMonthStartTs() && REQ.outboundFull === 'idle') loadOutboundData({ background: true });
         }
 
         function editOutboundItem(id, tglEdit, qtyAwal) {
@@ -3503,14 +4278,14 @@
             Swal.fire({
                 title: 'Edit Data Keluar',
                 html: `<div style="text-align:left; margin-bottom:12px;">
-                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Ubah Tanggal</label>
+                    <label style="font-size:var(--fs-sm); font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Ubah Tanggal</label>
                     <input type="date" id="swal-input-tgl" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${tglEdit}">
                 </div>
                 <div style="text-align:left;">
-                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Ubah QTY ${isConsolidated ? '(Total Gabungan)' : ''}</label>
+                    <label style="font-size:var(--fs-sm); font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Ubah QTY ${isConsolidated ? '(Total Gabungan)' : ''}</label>
                     <input type="number" id="swal-input-qty" step="0.01" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${qtyAwal}">
                 </div>
-                ${isConsolidated ? `<p style="font-size:0.75rem; color:var(--text-dim); text-align:left; margin-top:8px;"><i class="ph ph-info"></i> Mengubah QTY data gabungan akan mendistribusikan nilai baru ke data asal atau memproses baris utama.</p>` : ''}`,
+                ${isConsolidated ? `<p style="font-size:var(--fs-xs); color:var(--text-dim); text-align:left; margin-top:8px;"><i class="ph ph-info"></i> Mengubah QTY data gabungan akan mendistribusikan nilai baru ke data asal atau memproses baris utama.</p>` : ''}`,
                 showCancelButton: true, confirmButtonText: 'Simpan', cancelButtonText: 'Batal',
                 confirmButtonColor: 'var(--accent)', cancelButtonColor: 'var(--border-light)',
                 background: 'var(--surface)', color: 'var(--text)',
@@ -3532,6 +4307,7 @@
                     args: [result.value],
                     blocking: true,
                     alertOnError: true,
+                    onUncertain: () => { invalidateOutboundClient(); loadOutboundData(); silentlyLoadStockBalances(); },
                     onSuccess: res => {
                         Swal.fire({ title: 'Berhasil!', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
                         invalidateOutboundClient();   // SCOPED: outbound + stock
@@ -3554,12 +4330,12 @@
             const filtered = globalStockData.filter(r => _rowKey(r).includes(keyword));
 
             if (!filtered.length) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Item tidak ditemukan atau kosong pada periode tersebut.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:var(--fs-body);">Item tidak ditemukan atau kosong pada periode tersebut.</td></tr>';
                 return;
             }
 
             const html = [];   // BOOSTER: satu kali parse HTML
-            const BTN_STYLE = "background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:0.78rem; font-family:'Sora',sans-serif; display:inline-flex; align-items:center; gap:6px; font-weight:700;";
+            const BTN_STYLE = "background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:var(--fs-xs); font-family:'Sora',sans-serif; display:inline-flex; align-items:center; gap:6px; font-weight:700;";
 
             for (let i = 0; i < filtered.length; i++) {
                 const row = filtered[i];
@@ -3575,12 +4351,12 @@
                     `<td style="text-align:center; color:var(--green); font-weight:700;">${row._masuk.toFixed(2)}</td>`,
                     `<td style="text-align:center; color:var(--red); font-weight:700;">${row._keluar.toFixed(2)}</td>`,
                     `<td style="text-align:center;" class="${sisa < 0 ? 'sisa-neg' : 'sisa-pos'}">${sisa.toFixed(2)}</td>`,
-                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.uom)}</td>`,
+                    `<td style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${esc(row.uom)}</td>`,
                     `<td style="text-align:center;">`,
                     `<button onclick="showStockDetail('${nameArg}')" style="${BTN_STYLE}"`,
                     ` onmouseover="this.style.background='rgba(15, 118, 110, 0.15)'; prefetchItemLog('${nameArg}')"`,
                     ` onmouseout="this.style.background='var(--accent-soft)'; cancelPrefetchItemLog()">`,
-                    `<i class="ph ph-eye" style="font-size:0.95rem;"></i> Log</button></td>`,
+                    `<i class="ph ph-eye" style="font-size:var(--fs-lead);"></i> Log</button></td>`,
                     `</tr>`
                 );
             }
@@ -3674,12 +4450,12 @@
 
                 html[k] =
                     '<tr>' +
-                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${log.tanggal}</td>` +
-                    `<td class="mono" style="font-size:0.78rem;"><span style="${expStyle}">${expDateVal}</span></td>` +
+                    `<td style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${log.tanggal}</td>` +
+                    `<td class="mono" style="font-size:var(--fs-xs);"><span style="${expStyle}">${expDateVal}</span></td>` +
                     `<td style="text-align:center;">${badgeHtml}</td>` +
                     `<td style="text-align:right; font-weight:800; color:${isMasuk ? 'var(--green)' : 'var(--red)'};">${isMasuk ? '+' : '-'}${(parseFloat(log.qty) || 0).toFixed(2)}</td>` +
-                    `<td style="text-align:right; font-size:0.925rem; font-weight:800; background:rgba(15, 118, 110, 0.02);" class="${bal < 0 ? 'sisa-neg' : 'sisa-pos'}">${bal.toFixed(2)}</td>` +
-                    `<td style="color:var(--text-dim); font-size:0.8rem; font-weight:500;">${log.uom}</td>` +
+                    `<td style="text-align:right; font-size:var(--fs-lead); font-weight:800; background:rgba(15, 118, 110, 0.02);" class="${bal < 0 ? 'sisa-neg' : 'sisa-pos'}">${bal.toFixed(2)}</td>` +
+                    `<td style="color:var(--text-dim); font-size:var(--fs-sm); font-weight:500;">${log.uom}</td>` +
                     '</tr>';
             }
             tbody.innerHTML = html.join('');   // BOOSTER: satu kali sentuh DOM
@@ -3779,7 +4555,7 @@
 
             Swal.fire({
                 title: 'Muat ulang Stock Sistem?',
-                html: `<div style="text-align:left; font-size:0.88rem; color:var(--text-muted); line-height:1.7;">
+                html: `<div style="text-align:left; font-size:var(--fs-body); color:var(--text-muted); line-height:1.7;">
                     Angka <b>Stock Sistem</b> akan dihitung ulang pada tanggal cut-off ini.<br>
                     <b style="color:var(--green);">Stock Fisik dan catatan yang sudah Anda isi tetap dipertahankan.</b>
                 </div>`,
@@ -3797,7 +4573,7 @@
 
             const tbody = document.getElementById('opname-tbody');
             if (tbody && !opnameSnapshot.length) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Memuat stock sistem…</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:44px; color:var(--text-dim); font-size:var(--fs-body);">Memuat stock sistem…</td></tr>';
             }
 
             return serverCall({
@@ -3957,7 +4733,7 @@
             const keyword = (document.getElementById('opn-search').value || '').toLowerCase();
 
             if (!opnameSnapshot.length) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Tekan <b>“Muat Stock Sistem”</b> untuk memulai perhitungan opname.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:44px; color:var(--text-dim); font-size:var(--fs-body);">Tekan <b>“Muat Stock Sistem”</b> untuk memulai perhitungan opname.</td></tr>';
                 document.getElementById('btn-process-opname').disabled = true;
                 updateOpnameSummary();
                 return;
@@ -3987,9 +4763,9 @@
 
                 html.push(
                     `<tr${p.tersimpan ? ' class="opn-done"' : ''}>`,
-                    `<td style="text-align:center; color:var(--text-dim); font-size:0.78rem; font-weight:600;">${idx + 1}</td>`,
+                    `<td style="text-align:center; color:var(--text-dim); font-size:var(--fs-xs); font-weight:600;">${idx + 1}</td>`,
                     `<td style="font-weight:700; color:var(--text);">${esc(label)}${hint}</td>`,
-                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(it.uom || '—')}</td>`,
+                    `<td style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${esc(it.uom || '—')}</td>`,
                     `<td style="text-align:right; font-weight:700; color:var(--blue); font-family:'JetBrains Mono',monospace;">${sistem.toFixed(2)}</td>`,
                     `<td style="text-align:right;">`,
                     `<input type="number" step="0.01" id="opn-inp-${idx}" class="${p.inputClass}" placeholder="0.00"`,
@@ -4001,7 +4777,7 @@
             }
 
             if (shown === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:0.85rem;">Item tidak ditemukan.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:var(--fs-body);">Item tidak ditemukan.</td></tr>';
             } else {
                 paintRows(tbody, html);
             }
@@ -4172,7 +4948,7 @@
             const old = pendingDraftInfo;
             Swal.fire({
                 title: 'Buat opname baru?',
-                html: `<div style="text-align:left; font-size:0.88rem; color:var(--text-muted); line-height:1.7;">
+                html: `<div style="text-align:left; font-size:var(--fs-body); color:var(--text-muted); line-height:1.7;">
                     Draft <b>${old ? formatPeriodeLabel(old.periode) : ''}</b> (${old ? (old.counted||0) : 0} item terisi) akan <b style="color:var(--red);">dihapus</b>.<br>
                     Tindakan ini tidak dapat dibatalkan.
                 </div>`,
@@ -4196,9 +4972,11 @@
             });
         }
 
+        let _draftCreateKey = null;
         function resetOpnameWorkspace() {
             opnameSnapshot = [];
             opnameDraftId = null;
+            _draftCreateKey = null;
             opnameDraftStatus = null;
             _draftDirty = false;
             document.getElementById('btn-delete-draft').style.display = 'none';
@@ -4231,8 +5009,12 @@
 
             setDraftStatusText('saving', 'Menyimpan draft…');
 
+            // [UPGRADE] Draft BARU membawa kunci idempotency: bila autosave pertama
+            // timeout lalu dikirim lagi, backend memakai draft yang sama (bukan draft ganda).
+            if (!opnameDraftId && !_draftCreateKey) _draftCreateKey = AppApi.newTxId();
             const payload = {
                 draftId: opnameDraftId || '',
+                _idempotencyKey: opnameDraftId ? '' : _draftCreateKey,
                 tanggal: tanggal,
                 periode: getOpnamePeriodeKey(),
                 petugas: document.getElementById('opn-petugas').value.trim(),
@@ -4342,7 +5124,7 @@
             const blokUlang = ulangList.length ? `
                 <label style="display:flex; gap:8px; align-items:flex-start; margin-top:12px; padding:10px 12px;
                        background:#f5f3ff; border:1px solid rgba(109,40,217,0.25); border-radius:10px;
-                       font-size:0.82rem; color:#4c1d95; cursor:pointer; text-align:left; line-height:1.55;">
+                       font-size:var(--fs-sm); color:#4c1d95; cursor:pointer; text-align:left; line-height:1.55;">
                     <input type="checkbox" id="swal-opn-skip" checked style="margin-top:3px;">
                     <span>Lewati <b>${ulangList.length} item</b> yang sudah di-opname pada tanggal ini
                     dan nilainya belum diubah.</span>
@@ -4350,7 +5132,7 @@
 
             Swal.fire({
                 title: 'Proses Stock Opname?',
-                html: `<div style="text-align:left; font-size:0.88rem; color:var(--text-muted); line-height:1.7;">
+                html: `<div style="text-align:left; font-size:var(--fs-body); color:var(--text-muted); line-height:1.7;">
                     Periode: <b style="color:var(--text);">${document.getElementById('opn-periode').value}</b><br>
                     <span id="swal-opn-ringkas">${ringkasHtml(ulangList.length ? baruList : counted)}</span>
                 </div>${blokUlang}`,
@@ -4380,47 +5162,82 @@
                 const itemsDiproses = result.value;
                 // Blocking loader DIPERTAHANKAN: proses final harus ditunggu.
                 // LockService + pengecekan status draft ada di sisi backend.
-                const opnIdemKey = 'OPN-' + (opnameDraftId || 'MANUAL') + '-' + Date.now();
-                serverCall({
-                    key: 'opnameFinal',
-                    fn: 'saveOpnameData',
-                    priority: 0,
-                    args: [{ tanggal, periode, petugas, draftId: opnameDraftId || '', _idempotencyKey: opnIdemKey, items: itemsDiproses }],
-                    blocking: true,
-                    alertOnError: true,
-                    onSuccess: res => {
-                        const s = res.summary || {};
-                        Swal.fire({
-                            title: 'Opname Selesai!',
-                            html: `<div style="font-size:0.9rem; color:var(--text-muted); line-height:1.7;">
-                                ${res.message}<br>
-                                <b style="color:var(--green);">+${(s.adjPlus||0).toFixed(2)}</b> masuk ·
-                                <b style="color:var(--red);">-${(s.adjMinus||0).toFixed(2)}</b> keluar
-                            </div>`,
-                            icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)'
-                        });
+                // [UPGRADE · TRANSACTION] tx ID dibuat SEKALI per isi lembar opname.
+                // Bila hasil sebelumnya belum pasti (koneksi putus) dan user menekan
+                // Proses lagi dengan isi yang sama, tx ID yang SAMA dipakai ulang ->
+                // backend mengenali & tidak membuat adjustment dua kali.
+                const payloadOpn = { tanggal, periode, petugas, draftId: opnameDraftId || '', items: itemsDiproses };
+                const sig = _opnameSignature(payloadOpn);
+                if (!_pendingOpnameTx || _pendingOpnameTx.sig !== sig) {
+                    _pendingOpnameTx = { sig, key: 'OPN-' + (opnameDraftId || 'MANUAL') + '-' + AppApi.newTxId() };
+                }
+                payloadOpn._idempotencyKey = _pendingOpnameTx.key;
 
-                        // Draft yang sudah diproses ditutup di backend (status
-                        // PROCESSED) sehingga tidak mungkin diproses dua kali.
-                        // Di sisi UI cukup kosongkan workspace untuk opname berikutnya.
-                        resetOpnameWorkspace();
-                        pendingDraftInfo = null;
-                        renderDraftBanner();
-
-                        // SCOPED: stock + inbound + outbound + laporan opname.
-                        invalidateOutboundClient();
-                        invalidateInboundClient();
-                        globalOpnameReport = [];
-                        opnameReportSummary = null;
-                        REQ.opnameReport = 'idle';
-                        REQ.opnamePeriod = 'idle';
-                        REQ.opnameDraft  = 'idle';
-
-                        silentlyLoadStockBalances();
-                        switchTab('tab-laporan');
+                // Blocking loader DIPERTAHANKAN: proses final harus ditunggu.
+                // LockService + pengecekan status draft ada di sisi backend.
+                const btnProc = document.getElementById('btn-process-opname');
+                if (btnProc) btnProc.disabled = true;
+                showLoader(true, 'Memproses opname…');
+                AppApi.transact('saveOpnameData', payloadOpn, {
+                    onPhase: ph => {
+                        if (ph === 'VERIFYING' || ph === 'WAITING_SERVER') showLoader(true, 'Koneksi terputus · memastikan transaksi…');
+                        if (ph === 'RESENDING') showLoader(true, 'Mengirim ulang (ID transaksi sama)…');
                     }
+                }).then(out => {
+                    showLoader(false);
+                    updateOpnameSummary();
+                    if (out.state === 'REJECTED') {
+                        _pendingOpnameTx = null;
+                        return showAlert('Gagal', (out.result && out.result.message) || 'Server menolak proses opname.', 'error');
+                    }
+                    if (out.state !== 'CONFIRMED') {
+                        // Belum pasti: workspace TIDAK dikosongkan & tx ID dipertahankan.
+                        return showAlert('Koneksi Terputus', AppApi.messages.TX_VERIFY +
+                            '\n\nCek tab Laporan Opname. Bila perlu menekan Proses lagi, sistem memakai ID transaksi yang sama sehingga tidak tercatat ganda.', 'warning');
+                    }
+                    _pendingOpnameTx = null;
+                    const res = out.result || {};
+                    const s = res.summary || {};
+                    Swal.fire({
+                        title: 'Opname Selesai!',
+                        html: `<div style="font-size:var(--fs-body); color:var(--text-muted); line-height:1.7;">
+                            ${esc(res.message || '')}<br>
+                            <b style="color:var(--green);">+${(s.adjPlus||0).toFixed(2)}</b> masuk ·
+                            <b style="color:var(--red);">-${(s.adjMinus||0).toFixed(2)}</b> keluar
+                        </div>`,
+                        icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)'
+                    });
+
+                    // Draft yang sudah diproses ditutup di backend (status
+                    // PROCESSED) sehingga tidak mungkin diproses dua kali.
+                    // Di sisi UI cukup kosongkan workspace untuk opname berikutnya.
+                    resetOpnameWorkspace();
+                    pendingDraftInfo = null;
+                    renderDraftBanner();
+
+                    // SCOPED: stock + inbound + outbound + laporan opname.
+                    invalidateOutboundClient();
+                    invalidateInboundClient();
+                    globalOpnameReport = [];
+                    opnameReportSummary = null;
+                    REQ.opnameReport = 'idle';
+                    REQ.opnamePeriod = 'idle';
+                    REQ.opnameDraft  = 'idle';
+
+                    silentlyLoadStockBalances();
+                    switchTab('tab-laporan');
+                }).catch(err => {
+                    showLoader(false);
+                    updateOpnameSummary();
+                    console.error(err);
+                    showAlert('Perlu Dipastikan', AppApi.messages.TX_VERIFY, 'warning');
                 });
             });
+        }
+
+        let _pendingOpnameTx = null;   // { sig, key } — hanya di memori, tidak disimpan di storage
+        function _opnameSignature(p) {
+            return JSON.stringify([p.tanggal, p.periode, p.draftId, (p.items || []).map(it => [it.namaItem, it.fisik, it.sistem])]);
         }
 
         // ===================== LAPORAN OPNAME =====================
@@ -4474,11 +5291,12 @@
             const periode = document.getElementById('laporan-periode').value;
             const tbody = document.getElementById('laporan-tbody');
             if (opt.userInitiated && tbody) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Memuat laporan…</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:44px; color:var(--text-dim); font-size:var(--fs-body);">Memuat laporan…</td></tr>';
             }
             return serverCall({
                 key: 'opnameReport',
                 fn: 'getOpnameHistory',
+                priority: opt.background ? 2 : 1,
                 args: [{ periode: periode, force: !!opt.force }],
                 replace: !!opt.userInitiated,   // ganti periode saat loading tetap dilayani
                 onSuccess: res => {
@@ -4539,7 +5357,7 @@
             const filtered = globalOpnameReport.filter(r => _rowKey(r).includes(keyword));
             if (!filtered.length) {
                 _opnameRowById = new Map();
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:44px; color:var(--text-dim); font-size:0.85rem;">Belum ada laporan opname pada filter ini.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:44px; color:var(--text-dim); font-size:var(--fs-body);">Belum ada laporan opname pada filter ini.</td></tr>';
                 return;
             }
 
@@ -4555,10 +5373,10 @@
                 if (row.tanggalGroup !== currentGroup) {
                     currentGroup = row.tanggalGroup; groupId++;
                     html.push(`<tr class="group-hdr grp-laporan-print"><td colspan="10"><div class="group-hdr-inner" style="cursor:default;">
-                        <span style="font-size:0.825rem; font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:var(--fs-sm); font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px;">
                             <i class="ph ph-calendar-check" style="font-size:1.15rem;"></i> ${esc(currentGroup)}
                         </span>
-                        <span style="font-size:0.72rem; color:var(--text-dim); font-weight:700; letter-spacing:0.04em;">${esc(formatPeriodeLabel(row.periode))}</span>
+                        <span style="font-size:var(--fs-xs); color:var(--text-dim); font-weight:700; letter-spacing:0.04em;">${esc(formatPeriodeLabel(row.periode))}</span>
                     </div></td></tr>`);
                 }
 
@@ -4577,22 +5395,22 @@
                             <button type="button" class="btn-row" title="Edit hasil opname" onclick="editOpnameEntry('${argId}')"><i class="ph ph-pencil-simple"></i></button>
                             <button type="button" class="btn-row danger" title="Hapus baris opname" onclick="deleteOpnameEntryUI('${argId}')"><i class="ph ph-trash"></i></button>
                         </span></td>`
-                    : `<td class="no-print" style="text-align:center; color:var(--text-dim); font-size:0.78rem;">—</td>`;
+                    : `<td class="no-print" style="text-align:center; color:var(--text-dim); font-size:var(--fs-xs);">—</td>`;
 
                 // `petugas` dan `catatan` adalah teks bebas yang diketik operator —
                 // field paling rawan di aplikasi ini dan sebelumnya disisipkan
                 // mentah ke innerHTML. Sekarang keduanya di-escape.
                 html.push(
                     `<tr>`,
-                    `<td style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">${esc(row.tanggal)}</td>`,
+                    `<td style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${esc(row.tanggal)}</td>`,
                     `<td style="font-weight:700; color:var(--text);">${esc(_rowLabel(row))}</td>`,
-                    `<td style="color:var(--text-muted); font-size:0.8rem;">${esc(row.uom || '—')}</td>`,
+                    `<td style="color:var(--text-muted); font-size:var(--fs-sm);">${esc(row.uom || '—')}</td>`,
                     `<td style="text-align:right; color:var(--blue); font-weight:700; font-family:'JetBrains Mono',monospace;">${(parseFloat(row.sistem)||0).toFixed(2)}</td>`,
                     `<td style="text-align:right; color:var(--accent); font-weight:700; font-family:'JetBrains Mono',monospace;">${(parseFloat(row.fisik)||0).toFixed(2)}</td>`,
                     `<td style="text-align:right; font-weight:800; font-family:'JetBrains Mono',monospace; color:${sel>0?'var(--green)':(sel<0?'var(--red)':'var(--text-muted)')};">${sel>0?'+':''}${sel.toFixed(2)}</td>`,
                     `<td style="text-align:center;">${jenisBadge}</td>`,
-                    `<td style="color:var(--text-muted); font-size:0.8rem;">${esc(row.petugas || '—')}</td>`,
-                    `<td style="color:var(--text-dim); font-size:0.78rem;">${esc(row.catatan || '—')}</td>`,
+                    `<td style="color:var(--text-muted); font-size:var(--fs-sm);">${esc(row.petugas || '—')}</td>`,
+                    `<td style="color:var(--text-dim); font-size:var(--fs-xs);">${esc(row.catatan || '—')}</td>`,
                     aksiTd,
                     `</tr>`
                 );
@@ -4627,25 +5445,25 @@
             Swal.fire({
                 title: 'Edit Hasil Opname',
                 html: `
-                <div style="text-align:left; font-size:0.85rem; color:var(--text-muted); line-height:1.6; margin-bottom:12px;">
-                    <b style="color:var(--text); font-size:0.95rem;">${_expEsc(_rowLabel(row))}</b><br>
+                <div style="text-align:left; font-size:var(--fs-body); color:var(--text-muted); line-height:1.6; margin-bottom:12px;">
+                    <b style="color:var(--text); font-size:var(--fs-lead);">${_expEsc(_rowLabel(row))}</b><br>
                     ${_expEsc(row.tanggal || '')} &middot; ${_expEsc(formatPeriodeLabel(row.periode))} &middot; Stock Sistem
                     <b style="color:var(--blue); font-family:'JetBrains Mono',monospace;">${sistem.toFixed(2)}</b>
                 </div>
                 <div style="text-align:left; margin-bottom:12px;">
-                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Stock Fisik</label>
+                    <label style="font-size:var(--fs-sm); font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Stock Fisik</label>
                     <input type="number" id="swal-opn-fisik" step="0.01" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${fisik}">
-                    <div id="swal-opn-preview" style="font-size:0.8rem; font-weight:700; margin-top:8px;"></div>
+                    <div id="swal-opn-preview" style="font-size:var(--fs-sm); font-weight:700; margin-top:8px;"></div>
                 </div>
                 <div style="text-align:left; margin-bottom:12px;">
-                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Petugas / PIC</label>
+                    <label style="font-size:var(--fs-sm); font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Petugas / PIC</label>
                     <input type="text" id="swal-opn-petugas" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${_expEsc(row.petugas || '')}">
                 </div>
                 <div style="text-align:left;">
-                    <label style="font-size:0.8rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Catatan</label>
+                    <label style="font-size:var(--fs-sm); font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Catatan</label>
                     <input type="text" id="swal-opn-catatan" class="swal2-input" style="width:100%; margin:0; font-family:'Sora',sans-serif; border-radius:10px; border:1px solid var(--border);" value="${_expEsc(row.catatan || '')}">
                 </div>
-                <p style="font-size:0.75rem; color:var(--text-dim); text-align:left; margin-top:10px; line-height:1.55;">
+                <p style="font-size:var(--fs-xs); color:var(--text-dim); text-align:left; margin-top:10px; line-height:1.55;">
                     <i class="ph ph-info"></i> Adjustment di Data Masuk / Data Keluar ikut disesuaikan otomatis mengikuti selisih yang baru.
                 </p>`,
                 showCancelButton: true, confirmButtonText: 'Simpan Perubahan', cancelButtonText: 'Batal',
@@ -4685,6 +5503,7 @@
                     args: [result.value],
                     blocking: true,
                     alertOnError: true,
+                    onUncertain: afterOpnameMutation,
                     onSuccess: res => {
                         Swal.fire({ title: 'Berhasil!', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
                         afterOpnameMutation();
@@ -4707,7 +5526,7 @@
 
             Swal.fire({
                 title: 'Hapus Baris Opname?',
-                html: `<div style="text-align:left; font-size:0.88rem; color:var(--text-muted); line-height:1.7;">
+                html: `<div style="text-align:left; font-size:var(--fs-body); color:var(--text-muted); line-height:1.7;">
                     <b style="color:var(--text);">${_expEsc(_rowLabel(row))}</b><br>
                     ${_expEsc(row.tanggal || '')} &middot; ${_expEsc(formatPeriodeLabel(row.periode))}<br>
                     Sistem <b>${(parseFloat(row.sistem)||0).toFixed(2)}</b> &middot; Fisik <b>${(parseFloat(row.fisik)||0).toFixed(2)}</b><br><br>
@@ -4724,6 +5543,7 @@
                     args: [{ id: id }],
                     blocking: true,
                     alertOnError: true,
+                    onUncertain: afterOpnameMutation,
                     onSuccess: res => {
                         Swal.fire({ title: 'Terhapus', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
                         afterOpnameMutation();
@@ -5812,7 +6632,7 @@
             if (rem === null || isNaN(rem) || rem >= q) return `${_expFmtQty(q)} ${uom}`;
             const color = rem <= 0 ? 'var(--text-dim)' : 'var(--amber)';
             return `<span style="color:${color};">${_expFmtQty(rem)}</span> ${uom}
-                <br><span style="font-size:0.64rem; font-weight:600; color:var(--text-dim);" title="Perkiraan sisa batch setelah dikurangi transaksi keluar (alokasi FIFO) — data asli tidak berubah">
+                <br><span style="font-size:var(--fs-caption); font-weight:600; color:var(--text-dim);" title="Perkiraan sisa batch setelah dikurangi transaksi keluar (alokasi FIFO) — data asli tidak berubah">
                     <i class="ph ph-arrow-elbow-down-right"></i> sisa FIFO · awal ${_expFmtQty(q)}
                 </span>`;
         }
@@ -6146,6 +6966,7 @@
                     args: [{ items, status }],
                     replace: true,
                     blocking: true,
+                    onUncertain: () => loadExpData(null, { force: true }),
                     onSuccess: res => {
                         _patchExpStatus(keys, status);
                         Swal.fire({ title: 'Berhasil!', text: res.message, icon: 'success', background: 'var(--surface)', color: 'var(--text)', confirmButtonColor: 'var(--accent)' });
@@ -6183,6 +7004,7 @@
                     args: [{ key: key, namaItem: row.namaItem, expDate: row.expDate, status: newStatus }],
                     replace: true,
                     blocking: true,
+                    onUncertain: () => loadExpData(null, { force: true }),
                     onSuccess: () => _patchExpStatus(new Set([key]), newStatus),
                     onError: msg => { el.value = oldStatus; showAlert('Gagal', msg, 'error'); }
                 });
