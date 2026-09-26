@@ -1338,6 +1338,16 @@
         #modal-tbody td, #exp-day-tbody td, #exp-alert-modal-body td { white-space:nowrap; }
         #detail-modal .data-table { min-width:560px; }
 
+        /* Tombol Log Kartu Stock (dulu style inline + onmouseover). */
+        .btn-log {
+            background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent);
+            border-radius:8px; padding:6px 12px; cursor:pointer; font-size:var(--fs-xs); font-family:'Sora',sans-serif;
+            display:inline-flex; align-items:center; gap:6px; font-weight:700; transition:background-color 0.18s;
+        }
+        .btn-log:hover { background:rgba(15, 118, 110, 0.15); }
+        .btn-log .ph { font-size:var(--fs-lead); }
+        .stk-sisa-lbl, .stk-uom-inline, .lg-exp-lbl, .lg-bal-lbl, .lg-uom-inline { display:none; }
+
         /* Scroll tabel horizontal yang TERKENDALI: tidak ikut menggeser halaman. */
         .card div[style*="overflow-x:auto"] { -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; }
 
@@ -1576,16 +1586,65 @@
             .group-hdr-inner { padding:10px 14px; }
             .group-hdr-title { font-size:var(--fs-sm); }
             /* Kolom nama item lengket saat tabel digeser horizontal */
-            #tab-stock .data-table th:first-child, #tab-stock .data-table td:first-child,
             #tab-opname .data-table th:nth-child(2), #tab-opname .data-table td:nth-child(2) {
                 position:sticky; left:0; z-index:2; background:var(--surface);
                 box-shadow:1px 0 0 var(--border); max-width:48vw; white-space:normal;
             }
             #tab-opname .data-table th:nth-child(2), #tab-opname .data-table td:nth-child(2) { left:0; }
-            #tab-stock .data-table thead th:first-child, #tab-opname .data-table thead th:nth-child(2) { z-index:6; background:var(--surface2); }
+            #tab-opname .data-table thead th:nth-child(2) { z-index:6; background:var(--surface2); }
             #tab-opname .data-table th:first-child, #tab-opname .data-table td:first-child { display:none; }  /* kolom "#" disembunyikan di HP */
             /* Lebar kolom nama dikunci agar kolom angka & input tetap terlihat tanpa menggeser */
-            #tab-stock .data-table th:first-child, #tab-stock .data-table td:first-child { width:42vw; min-width:42vw; max-width:42vw; }
+            /* ---------- KARTU STOCK: tampilan kartu per item ----------
+               Baris 1: nama item · SISA (besar, berwarna) + satuan
+               Baris 2: Awal · Masuk · Keluar · tombol Log
+               Data, angka & urutan sama persis dengan tabel desktop. */
+            #tab-stock .data-table thead { display:none; }
+            #tab-stock .data-table, #stock-tbody { display:block; width:100%; }
+            #stock-tbody tr.stk-row {
+                display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)) auto;
+                grid-template-areas:"name name name sisa" "awal in out act";
+                column-gap:10px; row-gap:10px; align-items:end;
+                padding:14px 16px; border-bottom:1px solid var(--border); background:var(--surface);
+            }
+            #stock-tbody tr.stk-row:active { background:rgba(15,118,110,0.04); }
+            #stock-tbody tr.stk-row > td { display:block; padding:0 !important; border:none !important; text-align:left !important; min-width:0; }
+            #stock-tbody .stk-name { grid-area:name; align-self:start; font-size:var(--fs-body); line-height:1.3; word-break:break-word; }
+            #stock-tbody .stk-sisa { grid-area:sisa; align-self:start; text-align:right !important; font-size:1.125rem; font-weight:800; line-height:1.15; white-space:nowrap; font-variant-numeric:tabular-nums; }
+            #stock-tbody .stk-sisa-lbl { display:block; font-size:var(--fs-caption); font-weight:600; color:var(--text-dim); letter-spacing:0.04em; text-transform:uppercase; margin-bottom:2px; }
+            #stock-tbody .stk-uom-inline { display:inline; margin-left:4px; font-size:var(--fs-sm); font-weight:600; color:var(--text-muted); }
+            #stock-tbody .stk-awal { grid-area:awal; }
+            #stock-tbody .stk-in   { grid-area:in; }
+            #stock-tbody .stk-out  { grid-area:out; }
+            #stock-tbody .stk-num  { font-size:var(--fs-sm) !important; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            #stock-tbody .stk-num::before { content:attr(data-label); display:block; font-size:var(--fs-caption); font-weight:600; color:var(--text-dim); margin-bottom:2px; }
+            #stock-tbody .stk-uom { display:none !important; }
+            #stock-tbody .stk-act { grid-area:act; justify-self:end; }
+            #stock-tbody .btn-log { min-height:var(--tap); min-width:var(--tap); padding:0 14px; border-radius:12px; font-family:var(--font-ui) !important; font-size:var(--fs-sm); }
+            #stock-tbody .btn-log:active { transform:scale(0.96); }
+            #stock-tbody tr:not(.stk-row) td { display:block; }
+
+            /* ---------- DETAIL LOG (modal): kartu per transaksi ----------
+               Baris 1: tanggal · badge IN/OUT · QTY
+               Baris 2: Exp date (bila ada) · Sisa berjalan + satuan */
+            #detail-modal .data-table { min-width:0 !important; }
+            #detail-modal .data-table thead { display:none; }
+            #detail-modal .data-table, #modal-tbody { display:block; width:100%; }
+            #modal-tbody tr.lg-row {
+                display:grid; grid-template-columns:auto 1fr auto; grid-template-areas:"date type qty" "exp exp bal";
+                column-gap:12px; row-gap:6px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border);
+            }
+            #modal-tbody tr.lg-row > td { display:block; padding:0 !important; border:none !important; background:none !important; white-space:nowrap; }
+            #modal-tbody .lg-date { grid-area:date; font-size:var(--fs-sm) !important; font-weight:600 !important; color:var(--text) !important; }
+            #modal-tbody .lg-type { grid-area:type; text-align:left !important; }
+            #modal-tbody .lg-qty  { grid-area:qty; font-size:var(--fs-body); font-variant-numeric:tabular-nums; }
+            #modal-tbody .lg-exp  { grid-area:exp; display:flex !important; align-items:center; gap:6px; font-family:var(--font-ui) !important; }
+            #modal-tbody .lg-exp-empty { visibility:hidden; }
+            #modal-tbody .lg-exp-lbl { display:inline; font-size:var(--fs-caption); font-weight:600; color:var(--text-dim); }
+            #modal-tbody .lg-bal  { grid-area:bal; font-size:var(--fs-body) !important; font-variant-numeric:tabular-nums; }
+            #modal-tbody .lg-bal-lbl { display:inline; margin-right:6px; font-size:var(--fs-caption); font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em; }
+            #modal-tbody .lg-uom-inline { display:inline; margin-left:4px; font-size:var(--fs-sm); font-weight:600; color:var(--text-muted); }
+            #modal-tbody .lg-uom { display:none !important; }
+            #modal-tbody tr:not(.lg-row) td { display:block; }
             #tab-opname .data-table th:nth-child(2), #tab-opname .data-table td:nth-child(2) { width:34vw; min-width:34vw; max-width:34vw; }
             #tab-opname .data-table thead th { white-space:normal; line-height:1.25; vertical-align:bottom; }
             /* Lebar kolom eksplisit: Nama · Sistem · Fisik · Selisih · Status */
@@ -2552,7 +2611,8 @@
                 MAX_RETRY_DELAY: 30000,
                 PERF_LOG_ENABLED: false,
                 INCREMENTAL_RENDER_THRESHOLD: 500,
-                INCREMENTAL_CHUNK_SIZE: 100
+                INCREMENTAL_CHUNK_SIZE: 100,
+                INCREMENTAL_CHUNK_ROWS: 60        // [UPGRADE] render bertahap per BARIS utuh
             },
 
             // ---------- PERFORMANCE INSTRUMENTATION ----------
@@ -2913,41 +2973,56 @@
             },
 
             // ---------- INCREMENTAL TABLE RENDERING ----------
+            // [UPGRADE · BUG FIX] Dulu array dipecah per 100 POTONGAN STRING, padahal
+            // satu baris tabel terdiri dari beberapa potongan (Kartu Stock: 13).
+            // Batas potongan bisa jatuh DI TENGAH tag <button ...> sehingga sisa
+            // atributnya (onmouseover="...") tampil sebagai teks di beberapa baris.
+            // Sekarang HTML hanya dipecah di batas </tr> (baris utuh), dan setiap
+            // render baru membatalkan render bertahap sebelumnya pada tabel yang sama
+            // (dulu potongan lama bisa ikut tertempel saat user mengetik filter).
             renderChunked: function(tbodyEl, htmlParts, onDone) {
+                var token = (tbodyEl._renderToken || 0) + 1;
+                tbodyEl._renderToken = token;
                 if (!htmlParts || htmlParts.length === 0) {
                     tbodyEl.innerHTML = '';
                     if (onDone) onDone();
                     return;
                 }
                 var threshold = SIGAP.config.INCREMENTAL_RENDER_THRESHOLD;
+                var html = htmlParts.join('');
                 // Below threshold: render all at once (existing fast behavior)
                 if (htmlParts.length <= threshold) {
-                    tbodyEl.innerHTML = htmlParts.join('');
+                    tbodyEl.innerHTML = html;
                     if (onDone) onDone();
                     return;
                 }
-                // Above threshold: render in chunks via requestIdleCallback
-                var chunkSize = SIGAP.config.INCREMENTAL_CHUNK_SIZE;
-                var idx = 0;
-                tbodyEl.innerHTML = '';
+                // Pecah per baris utuh (tanpa regex lookbehind: tidak didukung iOS Safari < 16.4).
+                var pieces = html.split('</tr>'), rows = [];
+                for (var pi = 0; pi < pieces.length - 1; pi++) rows.push(pieces[pi] + '</tr>');
+                if (pieces[pieces.length - 1].trim()) rows.push(pieces[pieces.length - 1]);
+                var rowsPerChunk = SIGAP.config.INCREMENTAL_CHUNK_ROWS;
+                var idx = Math.min(rowsPerChunk, rows.length);
+                tbodyEl.innerHTML = rows.slice(0, idx).join('');  // layar pertama langsung tampil
+                var anchor = tbodyEl.firstElementChild;           // tabel diisi ulang di tempat lain -> berhenti
                 var schedule = window.requestIdleCallback || function(cb) { setTimeout(cb, 0); };
 
                 function renderBatch(deadline) {
+                    if (tbodyEl._renderToken !== token || !anchor || anchor.parentNode !== tbodyEl) return;   // sudah diganti render baru
                     var canContinue = true;
-                    while (idx < htmlParts.length && canContinue) {
-                        var end = Math.min(idx + chunkSize, htmlParts.length);
-                        var chunk = htmlParts.slice(idx, end).join('');
-                        tbodyEl.insertAdjacentHTML('beforeend', chunk);
+                    while (idx < rows.length && canContinue) {
+                        var end = Math.min(idx + rowsPerChunk, rows.length);
+                        tbodyEl.insertAdjacentHTML('beforeend', rows.slice(idx, end).join(''));
                         idx = end;
                         if (deadline && deadline.timeRemaining && deadline.timeRemaining() < 2) canContinue = false;
                     }
-                    if (idx < htmlParts.length) {
+                    if (idx < rows.length) {
                         schedule(renderBatch, { timeout: 100 });
                     } else {
                         if (onDone) onDone();
                     }
                 }
-                schedule(renderBatch, { timeout: 50 });
+                if (idx < rows.length) schedule(renderBatch, { timeout: 50 });
+                else if (onDone) onDone();
             },
 
             // ---------- CHUNKED DATA FETCHER (PAGINATION) ----------
@@ -3098,6 +3173,7 @@
             if (typeof SIGAP !== 'undefined' && SIGAP.renderChunked && htmlParts.length > (SIGAP.config.INCREMENTAL_RENDER_THRESHOLD || 400)) {
                 SIGAP.renderChunked(tbody, htmlParts);
             } else {
+                tbody._renderToken = (tbody._renderToken || 0) + 1;   // batalkan render bertahap lama
                 tbody.innerHTML = htmlParts.join('');
             }
         }
@@ -4702,28 +4778,29 @@
             }
 
             const html = [];   // BOOSTER: satu kali parse HTML
-            const BTN_STYLE = "background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:var(--fs-xs); font-family:'Sora',sans-serif; display:inline-flex; align-items:center; gap:6px; font-weight:700;";
 
             for (let i = 0; i < filtered.length; i++) {
                 const row = filtered[i];
                 const sisa = row._sisa;
                 // escAttr: nama item bisa memuat kutip / & / < dari spreadsheet.
-                // Versi lama hanya .replace(/'/g,"\\'") sehingga item seperti
-                // `Gula 1/2" Sachet` merusak atribut dan tombol Log jadi mati.
                 const nameArg = escAttr(row.namaItem);
+                const uom = esc(row.uom);
+                // [UPGRADE] Satu baris = satu potongan string (tidak bisa terbelah saat
+                // render bertahap). Kelas stk-* dipakai tampilan kartu di HP; di desktop
+                // tampilannya tetap tabel seperti sebelumnya. Hover pakai CSS, bukan
+                // onmouseover yang mengubah style inline.
                 html.push(
-                    `<tr>`,
-                    `<td style="font-weight:700; color:var(--text);">${esc(_rowLabel(row))}</td>`,
-                    `<td style="text-align:center; color:var(--amber); font-weight:700;">${row._awal.toFixed(2)}</td>`,
-                    `<td style="text-align:center; color:var(--green); font-weight:700;">${row._masuk.toFixed(2)}</td>`,
-                    `<td style="text-align:center; color:var(--red); font-weight:700;">${row._keluar.toFixed(2)}</td>`,
-                    `<td style="text-align:center;" class="${sisa < 0 ? 'sisa-neg' : 'sisa-pos'}">${sisa.toFixed(2)}</td>`,
-                    `<td style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${esc(row.uom)}</td>`,
-                    `<td style="text-align:center;">`,
-                    `<button onclick="showStockDetail('${nameArg}')" style="${BTN_STYLE}"`,
-                    ` onmouseover="this.style.background='rgba(15, 118, 110, 0.15)'; prefetchItemLog('${nameArg}')"`,
-                    ` onmouseout="this.style.background='var(--accent-soft)'; cancelPrefetchItemLog()">`,
-                    `<i class="ph ph-eye" style="font-size:var(--fs-lead);"></i> Log</button></td>`,
+                    `<tr class="stk-row">` +
+                    `<td class="stk-name" style="font-weight:700; color:var(--text);">${esc(_rowLabel(row))}</td>` +
+                    `<td class="stk-num stk-awal" data-label="Awal" style="text-align:center; color:var(--amber); font-weight:700;">${row._awal.toFixed(2)}</td>` +
+                    `<td class="stk-num stk-in" data-label="Masuk" style="text-align:center; color:var(--green); font-weight:700;">${row._masuk.toFixed(2)}</td>` +
+                    `<td class="stk-num stk-out" data-label="Keluar" style="text-align:center; color:var(--red); font-weight:700;">${row._keluar.toFixed(2)}</td>` +
+                    `<td style="text-align:center;" class="stk-sisa ${sisa < 0 ? 'sisa-neg' : 'sisa-pos'}"><span class="stk-sisa-lbl">Sisa</span>${sisa.toFixed(2)}<span class="stk-uom-inline">${uom}</span></td>` +
+                    `<td class="stk-uom" style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${uom}</td>` +
+                    `<td class="stk-act" style="text-align:center;">` +
+                    `<button type="button" class="btn-log" onclick="showStockDetail('${nameArg}')"` +
+                    ` onmouseenter="prefetchItemLog('${nameArg}')" onmouseleave="cancelPrefetchItemLog()">` +
+                    `<i class="ph ph-eye"></i> <span>Log</span></button></td>` +
                     `</tr>`
                 );
             }
@@ -4815,14 +4892,17 @@
                     if (rawExp) { expDateVal = formatExpDate(rawExp); expStyle = getExpDateStyle(rawExp); }
                 }
 
+                // [UPGRADE] kelas lg-* dipakai tampilan kartu di HP; desktop tetap tabel.
+                // Nilai teks dari sheet kini di-escape (tanggal, exp, uom).
+                const uomTxt = esc(log.uom);
                 html[k] =
-                    '<tr>' +
-                    `<td style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${log.tanggal}</td>` +
-                    `<td class="mono" style="font-size:var(--fs-xs);"><span style="${expStyle}">${expDateVal}</span></td>` +
-                    `<td style="text-align:center;">${badgeHtml}</td>` +
-                    `<td style="text-align:right; font-weight:800; color:${isMasuk ? 'var(--green)' : 'var(--red)'};">${isMasuk ? '+' : '-'}${(parseFloat(log.qty) || 0).toFixed(2)}</td>` +
-                    `<td style="text-align:right; font-size:var(--fs-lead); font-weight:800; background:rgba(15, 118, 110, 0.02);" class="${bal < 0 ? 'sisa-neg' : 'sisa-pos'}">${bal.toFixed(2)}</td>` +
-                    `<td style="color:var(--text-dim); font-size:var(--fs-sm); font-weight:500;">${log.uom}</td>` +
+                    '<tr class="lg-row">' +
+                    `<td class="lg-date" style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${esc(log.tanggal)}</td>` +
+                    `<td class="mono lg-exp${expDateVal === '—' ? ' lg-exp-empty' : ''}" style="font-size:var(--fs-xs);"><span class="lg-exp-lbl">Exp</span><span style="${expStyle}">${esc(expDateVal)}</span></td>` +
+                    `<td class="lg-type" style="text-align:center;">${badgeHtml}</td>` +
+                    `<td class="lg-qty" style="text-align:right; font-weight:800; color:${isMasuk ? 'var(--green)' : 'var(--red)'};">${isMasuk ? '+' : '-'}${(parseFloat(log.qty) || 0).toFixed(2)}</td>` +
+                    `<td style="text-align:right; font-size:var(--fs-lead); font-weight:800; background:rgba(15, 118, 110, 0.02);" class="lg-bal ${bal < 0 ? 'sisa-neg' : 'sisa-pos'}"><span class="lg-bal-lbl">Sisa</span>${bal.toFixed(2)}<span class="lg-uom-inline">${uomTxt}</span></td>` +
+                    `<td class="lg-uom" style="color:var(--text-dim); font-size:var(--fs-sm); font-weight:500;">${uomTxt}</td>` +
                     '</tr>';
             }
             tbody.innerHTML = html.join('');   // BOOSTER: satu kali sentuh DOM
