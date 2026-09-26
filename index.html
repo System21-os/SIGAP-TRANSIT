@@ -596,6 +596,10 @@
         }
 
         * { box-sizing: border-box; }
+        /* [UPGRADE] Tanpa reset ini body mendapat margin 8px bawaan browser:
+           header tidak penuh selebar layar dan 100dvh + 16px membuat halaman
+           bisa "memantul"/tergulir di HP. */
+        html, body { margin:0; }
 
         /* ===== PENGGANTI TAILWIND =====
            Satu-satunya utility Tailwind yang dipakai aplikasi ini (dipakai oleh
@@ -888,6 +892,14 @@
         }
         input[type="date"]::-webkit-calendar-picker-indicator,
         input[type="month"]::-webkit-calendar-picker-indicator { filter:opacity(0.6) sepia(1) saturate(5) hue-rotate(140deg); cursor:pointer; }
+
+        /* [UPGRADE] Input tanggal ber-kelas .inp kehilangan border karena aturan
+           input[type="date"] di atas lebih spesifik. Samakan dengan input lain. */
+        input.inp[type="date"] {
+            background:var(--surface); border:1px solid var(--border); color:var(--text);
+            font-size:var(--fs-body); padding:10px 14px;
+        }
+        input.inp[type="date"]:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
 
         .date-wrap {
             display:flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--border);
@@ -1445,6 +1457,233 @@
             .keluar-grid div[style*="grid-template-columns:1fr 1fr 1fr"] { gap:8px !important; }
         }
 
+        /* =====================================================================
+           [UPGRADE · NATIVE MOBILE SHELL] — hanya < 768 px. Desktop tidak berubah.
+           App bar ringkas + judul halaman · bottom navigation berikon · tabel
+           tampil penuh (edge-to-edge, header lengket) · tipografi & ritme spasi
+           mengikuti aplikasi native (font sistem: SF Pro di iPhone, Roboto di
+           Android) · umpan balik sentuh yang halus.
+           ===================================================================== */
+        .bottom-nav, .more-sheet, .app-page-title, .opn-uom-inline { display:none; }
+        .bn-badge { display:none; }
+
+        @media (max-width: 767px) {
+            :root {
+                --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                --fs-body: 0.9375rem;    /* 15 px — teks isi native */
+                --fs-sm: 0.8125rem;      /* 13 px */
+                --fs-xs: 0.75rem;        /* 12 px */
+                --fs-caption: 0.6875rem; /* 11 px */
+                --fs-h2: 1.0625rem;      /* 17 px — headline native */
+                --fs-h1: 1.25rem;        /* 20 px */
+                --bn-h: 64px;
+                --appbar-h: 60px;
+                --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+            html, body { background:var(--bg); }
+            body {
+                font-family:var(--font-ui);
+                background-image:none;
+                -webkit-tap-highlight-color:transparent;
+                letter-spacing:-0.005em;
+            }
+            button, input, select, textarea, .inp, .btn-primary, .btn-ghost, .btn-warn, .btn-danger-ghost,
+            .btn-save-big, .btn-scan-chip, .ts-wrapper.single .ts-control, .swal2-popup, .swal2-input,
+            .exp-status-select, .exp-period-select, .exp-year-pill, .exp-filter-reset { font-family:var(--font-ui) !important; }
+
+            /* ---------- App bar ---------- */
+            header {
+                position:relative; z-index:20;
+                padding-top:env(safe-area-inset-top);
+                background:var(--surface); box-shadow:0 1px 0 var(--border);
+                border-bottom:none;
+            }
+            header > div:first-child { height:var(--appbar-h) !important; padding:0 16px !important; gap:12px !important; }
+            header > div:nth-child(2) { display:none !important; }      /* tab atas diganti bottom nav */
+            .brand-badge { width:36px; height:36px; border-radius:11px; box-shadow:0 3px 10px rgba(15,118,110,0.25); }
+            .brand-badge .ph-fill { font-size:1.15rem !important; }
+            .brand-text { min-width:0; }
+            .brand-row { gap:6px !important; }
+            header .brand-name { font-size:var(--fs-caption) !important; font-weight:700; letter-spacing:0.02em; color:var(--text-dim); font-family:'Sora', var(--font-ui); }
+            header .logo-dot { width:6px; height:6px; }
+            header .brand-sub { display:none; }
+            .app-page-title {
+                display:block; font-size:var(--fs-h1); font-weight:700; letter-spacing:-0.02em;
+                color:var(--text); line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+            }
+            #sync-pill { font-size:var(--fs-caption); padding:5px 10px; max-width:34vw; }
+            #exp-bell { display:none !important; }   /* alert exp pindah ke badge "Lainnya" */
+
+            /* ---------- Area konten ---------- */
+            main {
+                padding:14px 14px calc(var(--bn-h) + 24px + env(safe-area-inset-bottom)) !important;
+                overscroll-behavior-y:contain; scroll-padding-top:12px;
+            }
+            .tab-content.active { animation:mobIn 0.24s var(--ease-out); }
+            @keyframes mobIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+            .card { border-radius:16px; border-color:var(--border); box-shadow:0 1px 2px rgba(36,29,24,0.04); }
+            .card-header { padding:16px !important; background:var(--surface) !important; }
+            .card + .card, .keluar-grid { gap:14px; }
+            #tab-exp > div, #tab-opname > div { gap:14px !important; }
+            .eyebrow { font-size:var(--fs-caption); letter-spacing:0.08em; }
+            .section-title { font-size:var(--fs-h2); font-weight:700; letter-spacing:-0.01em; }
+            .section-sub { font-size:var(--fs-sm); line-height:1.4; }
+            label.lbl { font-size:var(--fs-sm); font-weight:600; text-transform:none; letter-spacing:0; color:var(--text-muted); margin-bottom:6px; }
+
+            /* Form */
+            .inp, .ts-wrapper.single .ts-control { border-radius:12px !important; background:var(--surface) !important; }
+            .inp:read-only { background:var(--surface2) !important; }
+            .btn-primary, .btn-save-big { border-radius:14px; font-weight:700; letter-spacing:0; }
+            .btn-save-big { min-height:52px; font-size:var(--fs-body); }
+            .btn-ghost, .btn-warn, .btn-danger-ghost { border-radius:12px; font-weight:600; }
+
+            /* Umpan balik sentuh halus (tanpa hover yang "melompat") */
+            .btn-primary, .btn-ghost, .btn-warn, .btn-danger-ghost, .btn-save-big, .btn-row, .btn-scan-chip,
+            .btn-scan-inline, .bn-item, .more-item, .group-hdr-inner, .cal-day.has-items, .stat-card.is-clickable {
+                transition:transform 0.14s var(--ease-out), background-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+            }
+            .btn-primary:active, .btn-ghost:active, .btn-warn:active, .btn-danger-ghost:active, .btn-save-big:active,
+            .btn-row:active, .btn-scan-chip:active, .more-item:active, .stat-card.is-clickable:active { transform:scale(0.97); }
+            .group-hdr-inner:active { background:var(--accent-soft2, rgba(15,118,110,0.14)); }
+
+            /* KPI */
+            .stat-card { border-radius:14px; padding:14px; }
+            .stat-label { font-size:var(--fs-caption); letter-spacing:0.06em; }
+            .stat-value { font-size:1.375rem; }
+            .stat-hint { font-size:var(--fs-caption); }
+
+            /* ---------- TABEL TAMPIL PENUH ----------
+               Kartu yang berisi tabel dibuat edge-to-edge (selebar layar), area
+               tabel mengisi tinggi layar yang tersisa dengan header kolom lengket;
+               geser horizontal hanya di dalam tabel. */
+            .card:has(.data-table) { margin-left:-14px; margin-right:-14px; border-radius:0; border-left:none; border-right:none; box-shadow:none; }
+            .keluar-grid > .card:has(.data-table) { margin-left:-14px; margin-right:-14px; }
+            .card div[style*="max-height:520px"],
+            .card div[style*="max-height:560px"],
+            .card div[style*="max-height:620px"] {
+                max-height:calc(100dvh - var(--appbar-h) - var(--bn-h) - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+            }
+            .data-table thead th {
+                font-size:var(--fs-caption); letter-spacing:0.05em; padding:10px 12px;
+                background:var(--surface2); box-shadow:inset 0 -1px 0 var(--border); border-bottom:none;
+            }
+            .data-table tbody td { font-size:0.875rem; padding:12px; line-height:1.35; }
+            .data-table tbody tr:hover { background:transparent; }
+            .data-table tbody tr:active { background:rgba(15,118,110,0.04); }
+            .td-meta { font-size:var(--fs-sm); }
+            .td-num  { font-size:0.9375rem; }
+            .group-hdr-inner { padding:10px 14px; }
+            .group-hdr-title { font-size:var(--fs-sm); }
+            /* Kolom nama item lengket saat tabel digeser horizontal */
+            #tab-stock .data-table th:first-child, #tab-stock .data-table td:first-child,
+            #tab-opname .data-table th:nth-child(2), #tab-opname .data-table td:nth-child(2) {
+                position:sticky; left:0; z-index:2; background:var(--surface);
+                box-shadow:1px 0 0 var(--border); max-width:48vw; white-space:normal;
+            }
+            #tab-opname .data-table th:nth-child(2), #tab-opname .data-table td:nth-child(2) { left:0; }
+            #tab-stock .data-table thead th:first-child, #tab-opname .data-table thead th:nth-child(2) { z-index:6; background:var(--surface2); }
+            #tab-opname .data-table th:first-child, #tab-opname .data-table td:first-child { display:none; }  /* kolom "#" disembunyikan di HP */
+            /* Lebar kolom nama dikunci agar kolom angka & input tetap terlihat tanpa menggeser */
+            #tab-stock .data-table th:first-child, #tab-stock .data-table td:first-child { width:42vw; min-width:42vw; max-width:42vw; }
+            #tab-opname .data-table th:nth-child(2), #tab-opname .data-table td:nth-child(2) { width:34vw; min-width:34vw; max-width:34vw; }
+            #tab-opname .data-table thead th { white-space:normal; line-height:1.25; vertical-align:bottom; }
+            /* Lebar kolom eksplisit: Nama · Sistem · Fisik · Selisih · Status */
+            #tab-opname .data-table { table-layout:fixed; width:calc(34vw + 78px + 114px + 80px + 128px); min-width:0; }
+            #tab-opname .data-table th:nth-child(4) { width:78px; }
+            #tab-opname .data-table th:nth-child(5) { width:114px; }
+            #tab-opname .data-table th:nth-child(6) { width:80px; }
+            #tab-opname .data-table th:nth-child(7) { width:128px; }
+            #tab-opname .data-table td:nth-child(7) .badge { white-space:normal; }
+            /* Opname: UOM pindah ke bawah nama item -> input Stock Fisik langsung terlihat */
+            #tab-opname .data-table th:nth-child(3), #tab-opname .data-table td:nth-child(3) { display:none; }
+            .opn-uom-inline { display:block; margin-top:2px; font-size:var(--fs-caption); font-weight:600; color:var(--text-dim); }
+            #tab-opname .data-table td { padding-left:10px; padding-right:10px; }
+            .opname-input { width:92px; }
+            /* Riwayat Keluar & Data Masuk: tanggal sudah tampil di judul grup -> kolom Tanggal disembunyikan */
+            #tab-riwayat-keluar .data-table thead th:first-child,
+            #outbound-tbody tr:not(.group-hdr) > td:first-child,
+            #tab-masuk .data-table thead th:first-child,
+            #inbound-tbody tr:not(.group-hdr) > td:first-child { display:none; }
+            .td-name { min-width:9.5rem; }
+
+            /* Modal log & sheet memakai font sistem dan ritme yang sama */
+            #detail-modal > div, #exp-alert-modal > div, .scan-shell { border-radius:22px 22px 0 0 !important; }
+
+            /* ---------- BOTTOM NAVIGATION ---------- */
+            .bottom-nav {
+                display:flex; position:fixed; left:0; right:0; bottom:0; z-index:900;
+                height:calc(var(--bn-h) + env(safe-area-inset-bottom));
+                padding:6px 6px env(safe-area-inset-bottom);
+                background:rgba(255,255,255,0.97); border-top:1px solid var(--border);
+                box-shadow:0 -6px 24px rgba(36,29,24,0.06);
+            }
+            .bn-item {
+                flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+                background:none; border:none; padding:0; cursor:pointer; color:var(--text-dim);
+                -webkit-tap-highlight-color:transparent;
+            }
+            .bn-ico {
+                position:relative; display:flex; align-items:center; justify-content:center;
+                width:56px; height:30px; border-radius:99px; font-size:1.4rem;
+                transition:background-color 0.22s var(--ease-out), transform 0.22s var(--ease-out);
+            }
+            .bn-ico .ico-f { display:none; }
+            .bn-lbl { font-size:var(--fs-caption); font-weight:600; letter-spacing:0.01em; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+            .bn-item.active { color:var(--accent); }
+            .bn-item.active .bn-ico { background:var(--accent-soft); transform:translateY(-1px); }
+            .bn-item.active .ico-r { display:none; }
+            .bn-item.active .ico-f { display:inline-block; }
+            .bn-item.active .bn-lbl { font-weight:700; }
+            .bn-item:active .bn-ico { transform:scale(0.92); }
+            .bn-badge {
+                position:absolute; top:-2px; right:8px; min-width:17px; height:17px; padding:0 4px;
+                border-radius:99px; background:var(--red); color:#fff; font-size:0.625rem; font-weight:800;
+                align-items:center; justify-content:center; border:2px solid #fff; line-height:1;
+            }
+            .bn-badge.show { display:inline-flex; }
+
+            /* ---------- SHEET "LAINNYA" ---------- */
+            .more-sheet {
+                position:fixed; inset:0; z-index:950; background:rgba(36,29,24,0); align-items:flex-end;
+                transition:background-color 0.22s var(--ease-out);
+            }
+            .more-sheet.show { display:flex; }
+            .more-sheet.open { background:rgba(36,29,24,0.42); }
+            .more-panel {
+                width:100%; background:var(--surface); border-radius:22px 22px 0 0;
+                padding:8px 12px calc(16px + env(safe-area-inset-bottom));
+                transform:translateY(100%); transition:transform 0.26s var(--ease-out);
+                box-shadow:0 -12px 40px rgba(36,29,24,0.18);
+            }
+            .more-sheet.open .more-panel { transform:none; }
+            .sheet-grip { width:40px; height:5px; border-radius:99px; background:var(--border-light); margin:4px auto 10px; }
+            .more-head { display:flex; align-items:center; justify-content:space-between; padding:0 6px 8px; }
+            .more-head span { font-size:var(--fs-h2); font-weight:700; color:var(--text); }
+            .more-close { width:var(--tap); height:var(--tap); border:none; border-radius:50%; background:var(--surface2); color:var(--text-muted); font-size:1.15rem; display:inline-flex; align-items:center; justify-content:center; }
+            .more-item {
+                width:100%; display:flex; align-items:center; gap:14px; padding:12px 10px; min-height:64px;
+                background:none; border:none; border-radius:14px; text-align:left; color:var(--text); cursor:pointer;
+            }
+            .more-item + .more-item { margin-top:2px; }
+            .more-item.active { background:var(--accent-soft); }
+            .more-ico { width:44px; height:44px; flex-shrink:0; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; font-size:1.35rem; color:var(--c); background:var(--cb); }
+            .more-txt { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+            .more-txt b { font-size:var(--fs-body); font-weight:700; }
+            .more-txt small { font-size:var(--fs-sm); color:var(--text-dim); font-weight:500; }
+            .more-chev { color:var(--text-dim); font-size:1.1rem; }
+            .more-badge { position:static; border-color:transparent; }
+
+            /* SweetAlert di atas bottom nav, toast tidak tertutup app bar */
+            .swal2-container { z-index:10000 !important; }
+            .swal2-container.swal2-top-end, .swal2-container.swal2-top { padding-top:calc(8px + env(safe-area-inset-top)) !important; }
+            .swal2-popup:not(.swal2-toast) { border-radius:20px !important; }
+            .swal2-toast { border-radius:14px !important; }
+        }
+        @media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+            .more-panel, .more-sheet, .bn-ico { transition:none !important; }
+        }
+
     </style>
 </head>
 <body>
@@ -1516,12 +1755,14 @@
     <header>
         <div style="max-width:1180px; margin:0 auto; padding:0 20px; display:flex; align-items:center; height:70px; gap:14px;">
             <div class="brand-badge"><i class="ph-fill ph-package" style="color:#fff; font-size:1.4rem;"></i></div>
-            <div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <h1 class="display-title" style="font-size:var(--fs-h1);">Trans Cafe Gading</h1>
+            <div class="brand-text">
+                <div class="brand-row" style="display:flex; align-items:center; gap:8px;">
+                    <h1 class="display-title brand-name" style="font-size:var(--fs-h1);">Trans Cafe Gading</h1>
                     <span class="logo-dot"></span>
                 </div>
-                <p class="eyebrow" style="margin:2px 0 0;">Warehouse Inventory System</p>
+                <p class="eyebrow brand-sub" style="margin:2px 0 0;">Warehouse Inventory System</p>
+                <!-- [UPGRADE · MOBILE] Judul halaman ala app bar native (hanya tampil di HP). -->
+                <div id="app-page-title" class="app-page-title" aria-live="polite">Transaksi Keluar</div>
             </div>
             <!-- Indikator background hydration: TIDAK menutup layar -->
             <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
@@ -2189,6 +2430,60 @@
         </div>
 
     </main>
+
+    <!-- =====================================================================
+         [UPGRADE · MOBILE] BOTTOM NAVIGATION (hanya tampil di layar < 768 px).
+         Murni navigasi: setiap tombol memanggil switchTab() yang SAMA dengan
+         tab atas di desktop — tidak ada logic bisnis baru.
+         ===================================================================== -->
+    <nav id="bottom-nav" class="bottom-nav no-print" aria-label="Navigasi utama">
+        <button type="button" class="bn-item active" data-tab="tab-keluar" onclick="bnGo('tab-keluar')" aria-label="Keluar">
+            <span class="bn-ico"><i class="ph ph-upload-simple ico-r"></i><i class="ph-fill ph-upload-simple ico-f"></i></span>
+            <span class="bn-lbl">Keluar</span>
+        </button>
+        <button type="button" class="bn-item" data-tab="tab-riwayat-keluar" onclick="bnGo('tab-riwayat-keluar')" aria-label="Riwayat Keluar">
+            <span class="bn-ico"><i class="ph ph-clock-counter-clockwise ico-r"></i><i class="ph-fill ph-clock-counter-clockwise ico-f"></i></span>
+            <span class="bn-lbl">Riwayat</span>
+        </button>
+        <button type="button" class="bn-item" data-tab="tab-masuk" onclick="bnGo('tab-masuk')" aria-label="Data Masuk">
+            <span class="bn-ico"><i class="ph ph-download-simple ico-r"></i><i class="ph-fill ph-download-simple ico-f"></i></span>
+            <span class="bn-lbl">Masuk</span>
+        </button>
+        <button type="button" class="bn-item" data-tab="tab-stock" onclick="bnGo('tab-stock')" aria-label="Kartu Stock">
+            <span class="bn-ico"><i class="ph ph-chart-bar ico-r"></i><i class="ph-fill ph-chart-bar ico-f"></i></span>
+            <span class="bn-lbl">Stock</span>
+        </button>
+        <button type="button" class="bn-item" id="bn-more" data-group="more" onclick="openMoreSheet()" aria-label="Menu lainnya" aria-haspopup="dialog">
+            <span class="bn-ico"><i class="ph ph-squares-four ico-r"></i><i class="ph-fill ph-squares-four ico-f"></i><span class="bn-badge" id="bn-more-badge"></span></span>
+            <span class="bn-lbl" id="bn-more-lbl">Lainnya</span>
+        </button>
+    </nav>
+
+    <div id="more-sheet" class="more-sheet no-print" role="dialog" aria-modal="true" aria-labelledby="more-sheet-title" onclick="if(event.target===this)closeMoreSheet()">
+        <div class="more-panel">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <div class="more-head">
+                <span id="more-sheet-title">Menu Lainnya</span>
+                <button type="button" class="more-close" onclick="closeMoreSheet()" aria-label="Tutup"><i class="ph ph-x"></i></button>
+            </div>
+            <button type="button" class="more-item" data-tab="tab-exp" onclick="bnGo('tab-exp')">
+                <span class="more-ico" style="--c:var(--amber); --cb:var(--amber-soft);"><i class="ph ph-calendar-check"></i></span>
+                <span class="more-txt"><b>Exp Monitor</b><small>Kalender &amp; status barang kedaluwarsa</small></span>
+                <span class="bn-badge more-badge" id="more-exp-badge"></span>
+                <i class="ph ph-caret-right more-chev"></i>
+            </button>
+            <button type="button" class="more-item" data-tab="tab-opname" onclick="bnGo('tab-opname')">
+                <span class="more-ico" style="--c:var(--accent); --cb:var(--accent-soft);"><i class="ph ph-clipboard-text"></i></span>
+                <span class="more-txt"><b>Stock Opname</b><small>Hitung fisik &amp; buat adjustment</small></span>
+                <i class="ph ph-caret-right more-chev"></i>
+            </button>
+            <button type="button" class="more-item" data-tab="tab-laporan" onclick="bnGo('tab-laporan')">
+                <span class="more-ico" style="--c:var(--blue); --cb:var(--blue-soft);"><i class="ph ph-file-text"></i></span>
+                <span class="more-txt"><b>Laporan Opname</b><small>Rekap, edit &amp; cetak hasil opname</small></span>
+                <i class="ph ph-caret-right more-chev"></i>
+            </button>
+        </div>
+    </div>
 
     <!-- ===================== MODAL SCAN BARCODE ===================== -->
     <div id="scan-modal" class="no-print">
@@ -3500,6 +3795,7 @@
             try { tabBtn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
             // Preferensi UI saja (bukan data) — aman di localStorage.
             try { localStorage.setItem('tcg-inv:ui:tab', tabId); } catch (e) {}
+            _syncMobileNav(tabId);   // [UPGRADE · MOBILE] bottom nav + judul app bar
 
             // Selalu render dari data yang SUDAH ada dulu (instan), request hanya
             // dilakukan bila memang belum ada data dan tidak ada request berjalan.
@@ -3538,6 +3834,77 @@
                 else if (_needsFetch(['opnameReport'])) loadOpnameReport();
             }
         }
+
+        // ===================== [UPGRADE · MOBILE] NAVIGASI BAWAH =====================
+        // Lapisan tampilan saja. Semua perpindahan halaman tetap lewat switchTab().
+        const TAB_TITLES = {
+            'tab-keluar': 'Transaksi Keluar', 'tab-riwayat-keluar': 'Riwayat Keluar', 'tab-masuk': 'Data Masuk',
+            'tab-stock': 'Kartu Stock', 'tab-exp': 'Exp Monitor', 'tab-opname': 'Stock Opname', 'tab-laporan': 'Laporan Opname'
+        };
+        const MORE_TABS = { 'tab-exp': 'Exp', 'tab-opname': 'Opname', 'tab-laporan': 'Laporan' };
+
+        function _syncMobileNav(tabId) {
+            document.querySelectorAll('.bn-item[data-tab]').forEach(b => {
+                const on = b.dataset.tab === tabId;
+                b.classList.toggle('active', on);
+                if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+            });
+            const inMore = Object.prototype.hasOwnProperty.call(MORE_TABS, tabId);
+            const more = document.getElementById('bn-more');
+            if (more) more.classList.toggle('active', inMore);
+            const moreLbl = document.getElementById('bn-more-lbl');
+            if (moreLbl) moreLbl.textContent = inMore ? MORE_TABS[tabId] : 'Lainnya';
+            document.querySelectorAll('.more-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+            const title = document.getElementById('app-page-title');
+            if (title) title.textContent = TAB_TITLES[tabId] || '';
+        }
+
+        /** Tombol bottom nav / item sheet: pindah tab + kembali ke atas halaman. */
+        function bnGo(tabId) {
+            closeMoreSheet(true);
+            const wasActive = isTabActive(tabId);
+            switchTab(tabId);
+            const main = document.querySelector('main');
+            if (main) {
+                try { main.scrollTo({ top: 0, behavior: wasActive ? 'smooth' : 'auto' }); }
+                catch (e) { main.scrollTop = 0; }
+            }
+        }
+
+        function openMoreSheet() {
+            const sh = document.getElementById('more-sheet');
+            if (!sh) return;
+            sh.classList.add('show');
+            requestAnimationFrame(() => sh.classList.add('open'));
+        }
+        function closeMoreSheet(instant) {
+            const sh = document.getElementById('more-sheet');
+            if (!sh || !sh.classList.contains('show')) return;
+            sh.classList.remove('open');
+            if (instant) { sh.classList.remove('show'); return; }
+            setTimeout(() => sh.classList.remove('show'), 220);
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMoreSheet(); });
+
+        // Badge alert exp ikut tampil di "Lainnya" (mencerminkan lonceng header).
+        document.addEventListener('DOMContentLoaded', () => {
+            const bell = document.getElementById('exp-bell');
+            const cnt  = document.getElementById('exp-bell-count');
+            if (!bell || !cnt || typeof MutationObserver === 'undefined') return;
+            const mirror = () => {
+                const shown = bell.style.display && bell.style.display !== 'none';
+                const n = shown ? (cnt.textContent || '').trim() : '';
+                ['bn-more-badge', 'more-exp-badge'].forEach(id => {
+                    const b = document.getElementById(id);
+                    if (!b) return;
+                    b.textContent = n;
+                    b.classList.toggle('show', !!n && n !== '0');
+                });
+            };
+            new MutationObserver(mirror).observe(bell, { attributes: true, attributeFilter: ['style'] });
+            new MutationObserver(mirror).observe(cnt, { childList: true, characterData: true, subtree: true });
+            mirror();
+        });
 
         /**
          * [UPGRADE · PREFETCH] Muat data penuh sebuah tab di latar (prioritas 2,
@@ -4764,7 +5131,7 @@
                 html.push(
                     `<tr${p.tersimpan ? ' class="opn-done"' : ''}>`,
                     `<td style="text-align:center; color:var(--text-dim); font-size:var(--fs-xs); font-weight:600;">${idx + 1}</td>`,
-                    `<td style="font-weight:700; color:var(--text);">${esc(label)}${hint}</td>`,
+                    `<td style="font-weight:700; color:var(--text);">${esc(label)}<span class="opn-uom-inline">${esc(it.uom || '—')}</span>${hint}</td>`,
                     `<td style="color:var(--text-muted); font-size:var(--fs-sm); font-weight:500;">${esc(it.uom || '—')}</td>`,
                     `<td style="text-align:right; font-weight:700; color:var(--blue); font-family:'JetBrains Mono',monospace;">${sistem.toFixed(2)}</td>`,
                     `<td style="text-align:right;">`,
