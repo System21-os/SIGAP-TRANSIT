@@ -1338,6 +1338,40 @@
         #modal-tbody td, #exp-day-tbody td, #exp-alert-modal-body td { white-space:nowrap; }
         #detail-modal .data-table { min-width:560px; }
 
+        /* ---------- [UPGRADE] Filter jenis (button stack) ----------
+           5 tombol sama lebar dalam satu baris; tiap tombol bertumpuk:
+           ikon · label · jumlah. Selalu terlihat penuh, tanpa geser. */
+        .jenis-filter { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:6px; max-width:600px; }
+        .jf-btn {
+            min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+            padding:7px 4px 6px; min-height:58px; border-radius:12px;
+            border:1px solid var(--border); background:var(--surface); color:var(--text-muted);
+            font-family:inherit; font-size:var(--fs-caption); font-weight:700; line-height:1.15; cursor:pointer;
+            transition:background-color 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.18s, transform 0.14s;
+        }
+        .jf-btn .ph { font-size:1.2rem; }
+        .jf-btn > span:not(.jf-n) { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .jf-btn.jf-ib .ph { color:var(--blue); }
+        .jf-btn.jf-if .ph { color:var(--amber); }
+        .jf-btn.jf-im .ph { color:#6d28d9; }
+        .jf-btn.jf-other .ph { color:var(--text-dim); }
+        .jf-btn:hover { border-color:var(--accent); color:var(--accent); }
+        .jf-btn .jf-n {
+            font-size:var(--fs-caption); font-weight:800; line-height:1; color:var(--text-dim);
+            font-variant-numeric:tabular-nums; margin-top:1px;
+        }
+        .jf-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 3px 10px var(--accent-glow); }
+        .jf-btn.active .ph, .jf-btn.active .jf-n { color:#fff; }
+        .jf-btn:active { transform:scale(0.96); }
+        .jf-short { display:none; }
+        @media (max-width: 420px) { .jf-long { display:none; } .jf-short { display:inline; } }
+        @media (max-width: 380px) {
+            /* Dua tanggal 16px tidak muat satu baris di 320-380px -> ditumpuk. */
+            .date-wrap { flex-direction:column; align-items:stretch; gap:2px; padding:4px 10px; }
+            .date-wrap > span { display:none; }
+            .date-wrap input[type="date"] { width:100%; min-height:40px; }
+        }
+
         /* Tombol Log Kartu Stock (dulu style inline + onmouseover). */
         .btn-log {
             background:var(--accent-soft); border:1px solid rgba(15, 118, 110, 0.25); color:var(--accent);
@@ -1878,6 +1912,10 @@
                             <input type="date" id="out-tanggal" class="inp">
                         </div>
                         <div>
+                            <label class="lbl">Jenis Item</label>
+                            <div id="jf-keluar" class="jenis-filter" role="radiogroup" aria-label="Filter jenis item"></div>
+                        </div>
+                        <div>
                             <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
                                 <label class="lbl">Nama Item</label>
                                 <button type="button" class="btn-scan-chip" style="margin-bottom:6px;" onclick="openScanner('out-item')" title="Scan barcode item">
@@ -1973,6 +2011,7 @@
                                 <i class="ph ph-funnel"></i> Terapkan Filter
                             </button>
                         </div>
+                        <div id="jf-outbound" class="jenis-filter" role="radiogroup" aria-label="Filter jenis riwayat keluar"></div>
                     </div>
                 </div>
                 <div style="overflow-x:auto; max-height:520px; overflow-y:auto;">
@@ -2024,6 +2063,7 @@
                                 <i class="ph ph-funnel"></i> Terapkan Filter
                             </button>
                         </div>
+                        <div id="jf-inbound" class="jenis-filter" role="radiogroup" aria-label="Filter jenis data masuk"></div>
                     </div>
                 </div>
                 <div style="overflow-x:auto; max-height:520px; overflow-y:auto;">
@@ -2069,6 +2109,7 @@
                                 <i class="ph ph-funnel"></i> Ambil Periode
                             </button>
                         </div>
+                        <div id="jf-stock" class="jenis-filter" role="radiogroup" aria-label="Filter jenis kartu stock"></div>
                         <span id="stock-scope-note" class="scope-note">
                             <i class="ph ph-info"></i> Menampilkan saldo bulan berjalan · periode penuh sedang dimuat di latar belakang…
                         </span>
@@ -2139,6 +2180,7 @@
                                 <div class="stat-hint">habis / tidak ada / retur · klik untuk detail</div>
                             </div>
                         </div>
+                        <div id="jf-exp" class="jenis-filter" role="radiogroup" aria-label="Filter jenis exp monitor"></div>
                         <div style="position:relative;">
                             <i class="ph ph-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none;"></i>
                             <input type="text" id="filter-exp-name" placeholder="Cari nama item exp..." class="inp" style="padding-left:36px; padding-right:44px;" oninput="_debouncedFilterExp()">
@@ -2358,6 +2400,7 @@
                             <span class="chip neg"><i class="ph ph-arrow-down"></i> Selisih − <span class="n" id="opn-c-minus">0</span></span>
                             <span class="chip done" id="opn-chip-done" style="display:none;"><i class="ph ph-seal-check"></i> Sudah Opname <span class="n" id="opn-c-done">0</span></span>
                         </div>
+                        <div id="jf-opname" class="jenis-filter" role="radiogroup" aria-label="Filter jenis stock opname"></div>
                     </div>
                     <div style="overflow-x:auto; max-height:520px; overflow-y:auto;">
                         <table class="data-table">
@@ -2436,6 +2479,7 @@
                                 <button type="button" class="btn-scan-inline" onclick="openScanner('laporan-search')" title="Scan barcode item"><i class="ph ph-barcode"></i></button>
                             </div>
                         </div>
+                        <div id="jf-laporan" class="jenis-filter" role="radiogroup" aria-label="Filter jenis laporan opname"></div>
                     </div>
                 </div>
 
@@ -3982,6 +4026,106 @@
             mirror();
         });
 
+        // ===================== [UPGRADE] FILTER JENIS VIRTUAL =====================
+        // Jenis item diturunkan dari AWALAN KODE pada nama item — tidak ada kolom
+        // baru di sheet dan tidak ada request tambahan (filter murni di browser):
+        //   [IB… = Minuman · [IF… = Makanan · [IM… = Merchandise · lainnya = Other
+        // Setiap halaman punya pilihan sendiri; digabung (AND) dengan filter lain
+        // (tanggal, kata kunci). Angka / proses bisnis tidak berubah.
+        const JENIS_LIST = [
+            { key: 'ALL',   label: 'Semua',       icon: 'ph-squares-four' },
+            { key: 'IB',    label: 'Minuman',     short: 'Minum', icon: 'ph-coffee' },
+            { key: 'IF',    label: 'Makanan',     short: 'Makan', icon: 'ph-fork-knife' },
+            { key: 'IM',    label: 'Merchandise', short: 'Merch', icon: 'ph-t-shirt' },
+            { key: 'OTHER', label: 'Other',       icon: 'ph-dots-three-circle' }
+        ];
+        const JENIS_PAGES = ['keluar', 'outbound', 'inbound', 'stock', 'exp', 'opname', 'laporan'];
+        const _JENIS_RE = /^\s*\[\s*(I[BFM])/i;
+        const _jenisCache = new Map();
+
+        /** Jenis sebuah item dari kode awalannya: 'IB' | 'IF' | 'IM' | 'OTHER'. */
+        function itemJenis(nama) {
+            const k = (nama === null || nama === undefined) ? '' : String(nama);
+            let j = _jenisCache.get(k);
+            if (j === undefined) {
+                const m = _JENIS_RE.exec(k);
+                j = m ? m[1].toUpperCase() : 'OTHER';
+                _jenisCache.set(k, j);
+            }
+            return j;
+        }
+
+        const _jenisSel = (() => {
+            const sel = {};
+            JENIS_PAGES.forEach(p => { sel[p] = 'ALL'; });
+            try {
+                const saved = JSON.parse(localStorage.getItem('tcg-inv:ui:jenis') || '{}');
+                JENIS_PAGES.forEach(p => { if (JENIS_LIST.some(j => j.key === saved[p])) sel[p] = saved[p]; });
+            } catch (e) {}
+            return sel;
+        })();
+
+        function jenisActive(page) { return _jenisSel[page] || 'ALL'; }
+        function jenisOk(page, nama) {
+            const s = jenisActive(page);
+            return s === 'ALL' || itemJenis(nama) === s;
+        }
+
+        /**
+         * Gambar ulang tombol jenis sebuah halaman beserta jumlah per jenis.
+         * @param {string} page
+         * @param {Array}  baseRows  baris yang SUDAH lolos filter lain (tanggal/kata kunci)
+         * @param {Function=} nameOf  pengambil nama item dari baris
+         */
+        function renderJenisBar(page, baseRows, nameOf) {
+            const box = document.getElementById('jf-' + page);
+            if (!box) return;
+            const get = nameOf || (r => r.namaItem);
+            const cnt = { ALL: 0, IB: 0, IF: 0, IM: 0, OTHER: 0 };
+            if (baseRows) for (const r of baseRows) { cnt.ALL++; cnt[itemJenis(get(r))]++; }
+            const sel = jenisActive(page);
+            box.innerHTML = JENIS_LIST.map(j =>
+                `<button type="button" role="radio" aria-checked="${j.key === sel}" class="jf-btn jf-${j.key.toLowerCase()}${j.key === sel ? ' active' : ''}"` +
+                ` title="${j.label}" onclick="setJenis('${page}','${j.key}')"><i class="ph ${j.icon}"></i>` +
+                (j.short ? `<span class="jf-long">${j.label}</span><span class="jf-short">${j.short}</span>` : `<span>${j.label}</span>`) +
+                (baseRows ? `<span class="jf-n">${cnt[j.key]}</span>` : '') + `</button>`
+            ).join('');
+        }
+
+        /** Klik tombol jenis: simpan preferensi UI lalu render ulang halaman itu saja. */
+        function setJenis(page, key) {
+            if (!JENIS_LIST.some(j => j.key === key)) return;
+            _jenisSel[page] = key;
+            try { localStorage.setItem('tcg-inv:ui:jenis', JSON.stringify(_jenisSel)); } catch (e) {}
+            switch (page) {
+                case 'keluar':   applyKeluarJenis(); break;
+                case 'outbound': applyFilterOutbound(); break;
+                case 'inbound':  applyFilterInbound(); break;
+                case 'stock':    renderFilteredStock(); break;
+                case 'exp':      renderExpStats(); _onExpSearch(); break;
+                case 'opname':   renderOpnameTable(); break;
+                case 'laporan':  renderOpnameReport(); break;
+            }
+        }
+
+        // Dropdown item form Keluar: opsi disaring ulang tanpa menghapus pilihan user.
+        let _keluarAllOptions = [];
+        function applyKeluarJenis() {
+            const ts = tomSelectInstance;
+            renderJenisBar('keluar', _keluarAllOptions, o => o.value);
+            if (!ts) return;
+            try {
+                ts.clearOptions();
+                ts.addOptions(_keluarAllOptions.filter(o => jenisOk('keluar', o.value)));
+                ts.lastQuery = null;      // paksa hasil pencarian dihitung ulang
+                if (ts.isOpen) ts.refreshOptions(false);
+            } catch (e) { console.error(e); }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            JENIS_PAGES.forEach(p => renderJenisBar(p, null));
+        });
+
         /**
          * [UPGRADE · PREFETCH] Muat data penuh sebuah tab di latar (prioritas 2,
          * tidak memblokir UI, dedupe lewat state REQ). Dipanggil saat tab dibuka
@@ -4089,8 +4233,12 @@
 
             if (tomSelectInstance) { tomSelectInstance.destroy(); tomSelectInstance = null; }
 
+            // [UPGRADE] Semua opsi disimpan; yang tampil disaring filter jenis.
+            _keluarAllOptions = options;
+            renderJenisBar('keluar', options, o => o.value);
+
             tomSelectInstance = new TomSelect(selectEl, {
-                options,
+                options: options.filter(o => jenisOk('keluar', o.value)),
                 maxItems: 1,
                 searchField: ['text'],
                 placeholder: placeholderText || 'Ketik nama item...',
@@ -4454,6 +4602,7 @@
             const out = [];
             for (const r of (rows || [])) {
                 if (!r.namaItem || r.namaItem.toString().trim() === '') continue;
+                if (!r.rawDate && !r.tanggal) continue;   // [UPGRADE] baris tanpa tanggal tidak dirender
                 r._day    = new Date(r.rawDate).setHours(0, 0, 0, 0);
                 r._label  = stripCode(r.namaItem);
                 r._search = r._label.toLowerCase();
@@ -4614,9 +4763,11 @@
             const start = startVal ? new Date(startVal).setHours(0,0,0,0) : 0;
             const end   = endVal   ? new Date(endVal).setHours(23,59,59,999) : Infinity;
             // BOOSTER: _day & _search sudah dipre-compute (tanpa parsing ulang).
-            const filtered = globalInboundData.filter(row =>
+            const base = globalInboundData.filter(row =>
                 row._day >= start && row._day <= end && row._search.includes(keyword)
             );
+            renderJenisBar('inbound', base);
+            const filtered = base.filter(row => jenisOk('inbound', row.namaItem));
             renderGroupedTable(filtered, 'inbound-tbody', 'inbound');
             // Filter mundur ke luar bulan berjalan -> histori penuh dimuat on-demand
             // (onSuccess-nya menerapkan ulang filter ini).
@@ -4706,9 +4857,11 @@
             const end   = endVal   ? new Date(endVal).setHours(23,59,59,999) : Infinity;
 
             // BOOSTER: _day & _search sudah dipre-compute (tanpa parsing ulang).
-            const filtered = globalOutboundData.filter(row =>
+            const base = globalOutboundData.filter(row =>
                 row._day >= start && row._day <= end && row._search.includes(keyword)
             );
+            renderJenisBar('outbound', base);
+            const filtered = base.filter(row => jenisOk('outbound', row.namaItem));
 
             renderGroupedTable(filtered, 'outbound-tbody', 'outbound');
             if (start < _currentMonthStartTs() && REQ.outboundFull === 'idle') loadOutboundData({ background: true });
@@ -4770,7 +4923,9 @@
             const keyword = document.getElementById('filter-item-name').value.toLowerCase();
             const tbody   = document.getElementById('stock-tbody');
             // BOOSTER: _search sudah dipre-compute saat data diterima.
-            const filtered = globalStockData.filter(r => _rowKey(r).includes(keyword));
+            const base = globalStockData.filter(r => _rowKey(r).includes(keyword));
+            renderJenisBar('stock', base);
+            const filtered = base.filter(r => jenisOk('stock', r.namaItem));
 
             if (!filtered.length) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:var(--text-dim); font-size:var(--fs-body);">Item tidak ditemukan atau kosong pada periode tersebut.</td></tr>';
@@ -5188,11 +5343,13 @@
 
             let shown = 0;
             const html = [];   // BOOSTER: satu kali parse HTML
+            renderJenisBar('opname', keyword ? opnameSnapshot.filter(it => ((it._search !== undefined) ? it._search : stripCode(it.namaItem).toLowerCase()).includes(keyword)) : opnameSnapshot);
 
             for (let idx = 0; idx < opnameSnapshot.length; idx++) {
                 const it = opnameSnapshot[idx];
                 const search = (it._search !== undefined) ? it._search : stripCode(it.namaItem).toLowerCase();
                 if (keyword && !search.includes(keyword)) continue;
+                if (!jenisOk('opname', it.namaItem)) continue;   // [UPGRADE] filter jenis (tampilan saja)
                 shown++;
 
                 const sistem = parseFloat(it.sistem) || 0;
@@ -5776,6 +5933,24 @@
             return out;
         }
 
+        /** Ringkasan tampilan untuk subset baris laporan (cermin rumus getOpnameHistory). */
+        function _summarizeOpnameRows(rows) {
+            let sumPlus = 0, sumMinus = 0, cntPlus = 0, cntMinus = 0, cntSesuai = 0;
+            for (const r of rows) {
+                const sel = parseFloat(r.selisih) || 0;
+                if (sel > 0) { sumPlus += sel; cntPlus++; }
+                else if (sel < 0) { sumMinus += Math.abs(sel); cntMinus++; }
+                else cntSesuai++;
+            }
+            const total = cntPlus + cntMinus + cntSesuai;
+            return {
+                adjPlus: parseFloat(sumPlus.toFixed(2)), adjMinus: parseFloat(sumMinus.toFixed(2)),
+                net: parseFloat((sumPlus - sumMinus).toFixed(2)),
+                cntPlus, cntMinus, cntSesuai, totalItems: total,
+                akurasi: total > 0 ? parseFloat(((cntSesuai / total) * 100).toFixed(1)) : 100
+            };
+        }
+
         function renderOpnameStats(s) {
             if (!s) s = { adjPlus:0, adjMinus:0, net:0, cntPlus:0, cntMinus:0, cntSesuai:0, totalItems:0, akurasi:100 };
             document.getElementById('stat-plus').textContent    = (s.adjPlus||0).toFixed(2);
@@ -5800,8 +5975,18 @@
             document.getElementById('print-periode').textContent =
                 selPer.value ? (selPer.options[selPer.selectedIndex] ? selPer.options[selPer.selectedIndex].text : formatPeriodeLabel(selPer.value)) : 'Semua';
             document.getElementById('print-date').textContent = new Date().toLocaleString('id-ID');
+            if (jenisActive('laporan') !== 'ALL') {
+                const jl = (JENIS_LIST.find(j => j.key === jenisActive('laporan')) || {}).label || '';
+                document.getElementById('print-periode').textContent += ' · Jenis: ' + jl;
+            }
 
-            const filtered = globalOpnameReport.filter(r => _rowKey(r).includes(keyword));
+            const base = globalOpnameReport.filter(r => _rowKey(r).includes(keyword));
+            renderJenisBar('laporan', base);
+            const filtered = base.filter(r => jenisOk('laporan', r.namaItem));
+            // [UPGRADE] Kartu ringkasan: bila jenis dipilih, dihitung ulang dari baris
+            // jenis itu (rumus sama dengan getOpnameHistory); "Semua" = ringkasan server.
+            if (jenisActive('laporan') === 'ALL') renderOpnameStats(opnameReportSummary);
+            else renderOpnameStats(_summarizeOpnameRows(globalOpnameReport.filter(r => jenisOk('laporan', r.namaItem))));
             if (!filtered.length) {
                 _opnameRowById = new Map();
                 tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:44px; color:var(--text-dim); font-size:var(--fs-body);">Belum ada laporan opname pada filter ini.</td></tr>';
@@ -6204,6 +6389,10 @@
             if (t.type === 'select') {
                 const ts = tomSelectInstance;
                 if (!ts) return;
+                // Item hasil scan tersaring filter jenis -> kembalikan filter ke "Semua" dulu.
+                if (namaItem && ts.options && !ts.options[namaItem] && _keluarAllOptions.some(o => o.value === namaItem)) {
+                    setJenis('keluar', 'ALL');
+                }
                 if (namaItem && ts.options && ts.options[namaItem]) {
                     // Memicu onChange bawaan: UOM, ALT UOM, Sisa Stock, fokus QTY.
                     ts.setValue(namaItem);
@@ -6738,6 +6927,8 @@
         }
 
         function _expMatchKeyword(r, kw) {
+            // [UPGRADE] filter jenis ikut berlaku di kalender, tabel, panel & pencarian.
+            if (!jenisOk('exp', r.namaItem)) return false;
             if (!kw) return true;
             const nama = (r.namaItem || '').toLowerCase();
             return stripCode(r.namaItem || '').toLowerCase().includes(kw) || nama.includes(kw);
@@ -6870,7 +7061,9 @@
         // ===================== RINGKASAN =====================
         function renderExpStats() {
             let expired = 0, week = 0, month = 0, done = 0;
+            renderJenisBar('exp', globalExpData);
             for (const r of globalExpData) {
+                if (!jenisOk('exp', r.namaItem)) continue;   // [UPGRADE] ringkasan mengikuti filter jenis
                 if (r.status && r.status !== 'AKTIF') { done++; continue; }
                 const diff = _expDayDiff(r.expDate);
                 if (diff < 0) expired++;
